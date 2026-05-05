@@ -159,26 +159,16 @@ jobs:
           [[ "${{ github.event.inputs.enable_youloop }}" == "true" ]] && git clone --quiet --depth=1 https://github.com/bhackel/YouLoop.git
           [[ "${{ github.event.inputs.enable_youspeed }}" == "true" ]] && git clone --quiet --depth=1 https://github.com/PoomSmart/YouSpeed.git
           
-          # YTUHD: 중복 제거 및 빌드 최적화
+          # YTUHD 처리
           if [[ "${{ github.event.inputs.enable_ytuhd }}" == "true" ]]; then
             git clone --quiet --depth=1 --recurse-submodules https://github.com/PoomSmart/YTUHD.git
-            
-            # 헤더 파일 복사
             mkdir -p $THEOS/include/vpx && cp YTUHD/vendor/libvpx/vpx/*.h $THEOS/include/vpx/
-            
-            # 미리 빌드된 파일 확인 및 복사
             mkdir -p YTUHD/vendor/libvpx_ios
             PREBUILT_LIB="${{ github.workspace }}/vendor/lib/libvpx.a"
-
             if [ -f "$PREBUILT_LIB" ]; then
               cp "$PREBUILT_LIB" YTUHD/vendor/libvpx_ios/libvpx.a
-              echo "✅ 미리 빌드된 libvpx.a를 사용합니다."
             else
-              echo "⚠️ 미리 빌드된 파일이 없어 새로 컴파일을 시도합니다."
-              # macOS 의존성 설치
-              if [[ "$OSTYPE" == "darwin"* ]]; then
-                brew install gas-preprocessor
-              fi
+              if [[ "$OSTYPE" == "darwin"* ]]; then brew install gas-preprocessor; fi
               cd YTUHD/vendor/libvpx
               ./configure --target=arm64-darwin-gcc --disable-examples --disable-tools --disable-docs --disable-unit-tests --disable-vp8 --disable-vp9-encoder --enable-vp9-decoder --enable-pic
               make -j$(sysctl -n hw.ncpu) libvpx.a
@@ -187,31 +177,28 @@ jobs:
             fi
           fi
 
-          # YouChooseQuality (로컬라이제이션 및 들여쓰기 최적화)
+          # YouChooseQuality (핵심: 모든 줄의 들여쓰기 유지)
           if [[ "${{ github.event.inputs.enable_ycq }}" == "true" ]]; then
             git clone --quiet --depth=1 https://github.com/PoomSmart/YouChooseQuality.git
             YCQ_BUNDLE=$(find YouChooseQuality/layout -type d -name "*.bundle" 2>/dev/null | head -1)
-            
             if [[ -n "$YCQ_BUNDLE" ]]; then
               mkdir -p "$YCQ_BUNDLE/ko.lproj"
-              # 들여쓰기를 제거하여 파일 내부 데이터 정렬
               cat > "$YCQ_BUNDLE/ko.lproj/Localizable.strings" << 'KOEOF'
-"TWEAK_NAME" = "YouChooseQuality";
-"TWEAK_DESC" = "각 상황별로 지정한 화질과 동일하거나 가장 가까운 화질을 자동으로 선택합니다.";
-"ENABLED" = "활성화";
-"QUALITY_FOR_SCENARIO_0_SHORT" = "Wi-Fi";
-"QUALITY_FOR_SCENARIO_0" = "Wi-Fi 연결 시 기본 화질";
-"QUALITY_FOR_SCENARIO_1_SHORT" = "셀룰러";
-"QUALITY_FOR_SCENARIO_1" = "셀룰러(모바일 데이터) 연결 시 기본 화질";
-"QUALITY_FOR_SCENARIO_2_SHORT" = "Wi-Fi (AirPlay)";
-"QUALITY_FOR_SCENARIO_2" = "AirPlay 사용 중 Wi-Fi 연결 시 기본 화질";
-"QUALITY_FOR_SCENARIO_3_SHORT" = "셀룰러 (AirPlay)";
-"QUALITY_FOR_SCENARIO_3" = "AirPlay 사용 중 셀룰러 연결 시 기본 화질";
-"QUALITY_FOR_SCENARIO_4_SHORT" = "저전력 모드";
-"QUALITY_FOR_SCENARIO_4" = "저전력 모드 활성화 시 기본 화질";
-KOEOF
-              echo "" >> "$YCQ_BUNDLE/ko.lproj/Localizable.strings"[cite: 1]
-              echo "✅ 한국어 로컬라이제이션 파일이 생성되었습니다."
+          "TWEAK_NAME" = "YouChooseQuality";
+          "TWEAK_DESC" = "각 상황별로 지정한 화질과 동일하거나 가장 가까운 화질을 자동으로 선택합니다.";
+          "ENABLED" = "활성화";
+          "QUALITY_FOR_SCENARIO_0_SHORT" = "Wi-Fi";
+          "QUALITY_FOR_SCENARIO_0" = "Wi-Fi 연결 시 기본 화질";
+          "QUALITY_FOR_SCENARIO_1_SHORT" = "셀룰러";
+          "QUALITY_FOR_SCENARIO_1" = "셀룰러(모바일 데이터) 연결 시 기본 화질";
+          "QUALITY_FOR_SCENARIO_2_SHORT" = "Wi-Fi (AirPlay)";
+          "QUALITY_FOR_SCENARIO_2" = "AirPlay 사용 중 Wi-Fi 연결 시 기본 화질";
+          "QUALITY_FOR_SCENARIO_3_SHORT" = "셀룰러 (AirPlay)";
+          "QUALITY_FOR_SCENARIO_3" = "AirPlay 사용 중 셀룰러 연결 시 기본 화질";
+          "QUALITY_FOR_SCENARIO_4_SHORT" = "저전력 모드";
+          "QUALITY_FOR_SCENARIO_4" = "저전력 모드 활성화 시 기본 화질";
+          KOEOF
+              echo "" >> "$YCQ_BUNDLE/ko.lproj/Localizable.strings"
             fi
           fi
 
