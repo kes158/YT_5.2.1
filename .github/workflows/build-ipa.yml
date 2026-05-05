@@ -59,7 +59,7 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   THEOS: ${{ github.workspace }}/theos
-  # [최적화] Homebrew 자동 업데이트 및 클린업 방지
+  # [최적화] Homebrew 자동 업데이트 방지
   HOMEBREW_NO_AUTO_UPDATE: 1
   HOMEBREW_NO_INSTALL_CLEANUP: 1
 
@@ -88,23 +88,27 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # ── 3. [최적화] 빌드 도구 캐싱 및 설치 ──────────────────
-      - name: Cache Homebrew
-        id: cache-brew
+      # ── 3. [최적화] 빌드 도구 및 pipx 캐싱 설치 ──────────────────
+      - name: Cache Build Tools
+        id: cache-tools
         uses: actions/cache@v4
         with:
           path: |
             /opt/homebrew/bin
             /opt/homebrew/Cellar
-          key: ${{ runner.os }}-brew-v1 # 도구 변경 시 v1을 v2로 수정
+            ~/.local/pipx
+          key: ${{ runner.os }}-build-tools-v1
+          restore-keys: |
+            ${{ runner.os }}-build-tools-
 
       - name: Install Build Tools
         run: |
-          # [최적화] 이미 설치된 wget은 제외, ldid/dpkg만 설치
+          # Homebrew 패키지 설치 (캐시 미적중 시에만 작동하도록 brew가 내부 판별)
           brew install make ldid dpkg
           echo "$(brew --prefix make)/libexec/gnubin" >> $GITHUB_PATH
           
-          # [최적화] pipx 캐싱 대신 도구 유무 확인 후 설치
+          # [최적화] pipx 경로 추가 및 pyzule-rw 설치
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
           if ! command -v cyan &> /dev/null; then
             pipx install --force https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
           fi
@@ -112,13 +116,11 @@ jobs:
       # ── 4. [최적화] Theos 및 iOS SDK 설정 (Shallow Clone) ───────
       - name: Setup Theos
         run: |
-          # [최적화] --depth=1과 shallow submodules로 클론 시간 단축
           git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/theos/theos.git $THEOS
           echo "THEOS=$THEOS" >> $GITHUB_ENV
 
       - name: Download iOS SDK
         run: |
-          # [최적화] Sparse-checkout을 이용해 16.5 SDK만 정밀 타격
           git clone --quiet -n --depth=1 --filter=tree:0 https://github.com/theos/sdks/
           cd sdks
           git sparse-checkout set --no-cone iPhoneOS16.5.sdk
@@ -127,22 +129,17 @@ jobs:
           mv iPhoneOS16.5.sdk $THEOS/sdks/
           echo "SDKVERSION=16.5" >> $GITHUB_ENV
 
-      # ── 5. 원본 IPA 다운로드 (Dropbox 대응) ─────────────────────
+      # ── 5. 원본 IPA 다운로드 ─────────────────────
       - name: Download Original IPA
         run: |
           URL="${{ github.event.inputs.decrypted_ipa_url }}"
           if [[ "$URL" == *"dropbox.com"* ]]; then
             URL="${URL/dl=0/dl=1}"
           fi
-          # [최적화] -q(quiet)와 --show-progress 조합으로 로그 깔끔하게 유지
           wget -q --show-progress "$URL" -O youtube.ipa
-          
-          if [ ! -s youtube.ipa ]; then
-            echo "❌ IPA Download Failed"
-            exit 1
-          fi
+          if [ ! -s youtube.ipa ]; then exit 1; fi
 
-      # ── 6. 트윅 소스 확보 및 커스텀 패치 (상동) ───────────────────
+      # ── 6. 트윅 소스 확보 및 커스텀 패치 ───────────────────
       - name: Prepare Selected Tweaks
         run: |
           cd $THEOS/include
@@ -208,13 +205,11 @@ jobs:
           for dir in */; do
             if [[ -f "$dir/Makefile" ]]; then
               cd "$dir"
-              # [최적화] 병렬 빌드(-j) 적용하여 컴파일 속도 향상
               make -j$(sysctl -n hw.ncpu) clean package DEBUG=0 FINALPACKAGE=1 SIDELOAD=1 SDKVERSION=16.5
               find . -name "*.deb" -exec cp {} ${{ github.workspace }}/ready_packages/ \;
               cd ..
             fi
           done
-
           if [[ -d "tweaks" ]]; then
             cp tweaks/*.deb ${{ github.workspace }}/ready_packages/ 2>/dev/null || true
           fi
@@ -223,11 +218,6 @@ jobs:
       - name: Final Injection
         run: |
           EXTRA_TWEAKS=$(ls ${{ github.workspace }}/ready_packages/*.deb 2>/dev/null | tr '\n' ' ')
-          if [[ -z "$EXTRA_TWEAKS" ]]; then
-            echo "❌ No DEB files found"
-            exit 1
-          fi
-
           cyan -i ./youtube.ipa \
                -o "${{ steps.meta.outputs.ipa_name }}" \
                -uwef $EXTRA_TWEAKS \
