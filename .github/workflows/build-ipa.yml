@@ -73,20 +73,19 @@ jobs:
           mv sdks/iPhoneOS16.5.sdk $THEOS/sdks/
           echo "SDKVERSION=16.5" >> $GITHUB_ENV
 
-      # ── 5. IPA 다운로드 ─────────────────────
+      # ── 5. IPA 다운로드 (Dropbox 차단 방지 적용) ─────────────────────
       - name: Download Original IPA
         run: |
           URL="${{ github.event.inputs.decrypted_ipa_url }}"
           [[ "$URL" == *"dropbox.com"* ]] && URL="${URL/dl=0/dl=1}"
           aria2c -x 4 -s 4 -k 1M --user-agent="Mozilla/5.0" --retry-wait=5 --max-tries=10 "$URL" -o youtube.ipa
 
-      # ── 6. 트윅 소스 준비 및 헤더 충돌 해결 ────────────
-      - name: Prepare Tweaks and Fix Headers
+      # ── 6. 트윅 소스 준비 및 패치 (핵심 수정 구역) ────────────
+      - name: Prepare Tweaks and Apply Fixes
         run: |
           mkdir -p ${{ github.workspace }}/tweaks_src
           cd ${{ github.workspace }}/tweaks_src
 
-          # 필요한 저장소 클론
           REPOS=(
             "YouTubeHeader|https://github.com/PoomSmart/YouTubeHeader.git"
             "PSHeader|https://github.com/PoomSmart/PSHeader.git"
@@ -109,8 +108,7 @@ jobs:
           done
           wait
 
-          # ⚠️ 핵심: 헤더 충돌 해결 ⚠️
-          # PSHeader 등에서 들어온 CoreImage가 시스템 UIKit과 충돌하므로 제거
+          # 1. CoreImage 헤더 충돌 해결
           rm -rf PSHeader/CoreImage
           
           mkdir -p $THEOS/include/YTHeaders
@@ -120,9 +118,15 @@ jobs:
           cp -R . ${{ github.workspace }}/
           cd ${{ github.workspace }}
 
-          # DEMC 빌드 에러 패치
-          if [ -f "DontEatMyContent/Tweak.h" ]; then
+          # 2. DontEatMyContent 링커 에러 (_constant) 해결 패치
+          if [ -d "DontEatMyContent" ]; then
+            echo "🔧 Patching DontEatMyContent..."
+            # Tweak.h 에서 중복 선언 제거 및 extern 처리
             sed -i '' "s/^CGFloat constant;/extern CGFloat constant;/" DontEatMyContent/Tweak.h
+            # Tweak.x 상단에 실제 변수 정의(Definition) 주입
+            sed -i '' "1i\\
+            CGFloat constant = 0;\\
+            " DontEatMyContent/Tweak.x
           fi
 
       # ── 7. 컴파일 및 패키징 ────────────────────────
@@ -140,12 +144,12 @@ jobs:
             cd ${{ github.workspace }}
           fi
 
-          # 모든 트윅 순회 빌드
+          # 트윅 개별 빌드
           for dir in */; do
             if [[ -f "$dir/Makefile" && "$dir" != "theos/" ]]; then
               echo "🔨 Building $dir..."
               cd "$dir"
-              make clean # 이전 빌드 찌꺼기 제거
+              make clean
               make -j$(sysctl -n hw.ncpu) package
               cp packages/*.deb ${{ github.workspace }}/ready_packages/ 2>/dev/null || true
               cd ${{ github.workspace }}
