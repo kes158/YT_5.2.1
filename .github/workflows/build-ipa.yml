@@ -284,17 +284,17 @@ jobs:
             echo "  모든 클론 완료"
           fi
 
-          # ── 4단계: 헤더 구조화 ────────────────────────────────────────
+          # ── 4단계: 헤더 구조화 (.git 제외하고 복사) ─────────────────────
           if [[ -d "$BUILD_DIR/YouTubeHeader" ]]; then
             mkdir -p $THEOS/include/YouTubeHeader
-            cp -R "$BUILD_DIR/YouTubeHeader/." $THEOS/include/YouTubeHeader/
-            cp -R "$BUILD_DIR/YouTubeHeader/." $THEOS/include/
+            rsync -a --exclude='.git' "$BUILD_DIR/YouTubeHeader/" $THEOS/include/YouTubeHeader/
+            rsync -a --exclude='.git' "$BUILD_DIR/YouTubeHeader/" $THEOS/include/
           fi
           if [[ -d "$BUILD_DIR/PSHeader" ]]; then
             rm -rf "$BUILD_DIR/PSHeader/CoreImage"
             mkdir -p $THEOS/include/PSHeader
-            cp -R "$BUILD_DIR/PSHeader/." $THEOS/include/PSHeader/
-            cp -R "$BUILD_DIR/PSHeader/." $THEOS/include/
+            rsync -a --exclude='.git' "$BUILD_DIR/PSHeader/" $THEOS/include/PSHeader/
+            rsync -a --exclude='.git' "$BUILD_DIR/PSHeader/" $THEOS/include/
           fi
 
           # ── 5단계: DontEatMyContent 패치 ──────────────────────────────
