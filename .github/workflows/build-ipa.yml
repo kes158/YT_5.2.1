@@ -52,7 +52,8 @@ jobs:
           YT_VERSION=$(echo "$URL" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
           if [[ -z "$YT_VERSION" ]]; then YT_VERSION="Unknown"; fi
           echo "ipa_name=YTPlus_5.2.1_${YT_VERSION}.ipa" >> "$GITHUB_OUTPUT"
-          echo "tag=v${YT_VERSION}-${{ github.run_id }}" >> "$GITHUB_OUTPUT"
+          echo "release_name=YTPlus_5.2.1_${YT_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=YTPlus_5.2.1_${YT_VERSION}" >> "$GITHUB_OUTPUT"
 
       # ── 2. 저장소 체크아웃 (push 권한 포함) ────────────────────────
       - name: Checkout Repository
@@ -314,4 +315,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.release_name }}
           files: ${{ steps.meta.outputs.ipa_name }}
