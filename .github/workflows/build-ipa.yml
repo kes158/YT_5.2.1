@@ -427,7 +427,7 @@ jobs:
             exit 1
           fi
 
-          # 1. YTPlus 본체 deb 설정 (고정 경로)
+          # 1. YTPlus 본체 deb 설정
           YTPLUS_DEB=$(ls ${{ github.workspace }}/tweaks/com.dvntm.ytlite_5.2.1_iphoneos-arm_patch_zarzel.deb 2>/dev/null | head -1)
           if [[ -z "$YTPLUS_DEB" ]]; then
             echo "❌ YTPlus 본체 deb를 찾을 수 없습니다!"
@@ -435,26 +435,27 @@ jobs:
           fi
           echo "📦 YTPlus 본체: $YTPLUS_DEB"
 
-          # 2. 보조 트윅들 중복 제거 로직[cite: 4]
+          # 2. 보조 트윅들 중복 제거 로직 (호환성 모드)[cite: 4]
           RAW_DEBS=$(ls ${{ github.workspace }}/ready_packages/*.deb 2>/dev/null)
           UNIQUE_DEBS=""
-          declare -A seen_tweaks
+          SEEN_TWEAKS=""
 
           for deb in $RAW_DEBS; do
             filename=$(basename "$deb")
             
-            # 본체(ytlite)와 겹치는 파일은 목록에서 제외 (중복 주입 방지)[cite: 4]
+            # 본체(ytlite)와 겹치는 파일 제외[cite: 4]
             if [[ "$filename" == *"ytlite"* ]]; then continue; fi
             
-            # 트윅 ID(이름 앞부분)를 추출하여 이미 추가된 트윅인지 확인[cite: 4]
+            # 트윅 ID 추출 (첫 번째 '_' 이전 문자열)[cite: 4]
             tweak_id=$(echo "$filename" | cut -d'_' -f1)
             
-            if [[ -z "${seen_tweaks[$tweak_id]}" ]]; then
+            # SEEN_TWEAKS 문자열에 이미 포함되어 있는지 확인 (중복 체크)
+            if [[ "$SEEN_TWEAKS" != *"$tweak_id"* ]]; then
               UNIQUE_DEBS+="$deb "
-              seen_tweaks[$tweak_id]=1
+              SEEN_TWEAKS+="$tweak_id "
               echo "✅ 주입 목록 추가: $filename"
             else
-              echo "⚠️  중복 제외: $filename (이미 같은 계열의 트윅이 존재함)"[cite: 4]
+              echo "⚠️  중복 제외: $filename"[cite: 4]
             fi
           done
 
@@ -467,7 +468,7 @@ jobs:
             -b "${{ github.event.inputs.bundle_id }}" \
             -p
 
-      # ── 9. 릴리스 업로드 (기존 중요 코드 유지) ──
+      # ── 9. 릴리스 업로드 (기존 코드 유지)[cite: 3, 4] ──
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
