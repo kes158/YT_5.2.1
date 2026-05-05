@@ -68,14 +68,23 @@ jobs:
       contents: write
 
     steps:
-      # ── 1. 메타데이터 및 버전 추출 ───────────────────────
+      # ── 1. 메타데이터 및 버전 추출 (요청 사항 반영) ───────────────────────
       - name: Extract Metadata
         id: meta
         run: |
+          # 입력받은 URL에서 유튜브 버전 추출 (예: 21.18.4)
           URL="${{ github.event.inputs.decrypted_ipa_url }}"
           YT_VERSION=$(echo "$URL" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
           if [[ -z "$YT_VERSION" ]]; then YT_VERSION="Unknown"; fi
-          echo "ipa_name=YTPlus_Custom_${YT_VERSION}.ipa" >> "$GITHUB_OUTPUT"
+          
+          # 트윅 버전 고정 (5.2.1)
+          TWEAK_VERSION="5.2.1"
+          
+          # 요청하신 형식: YTPlus_5.2.1_21.18.4
+          COMBINED_NAME="YTPlus_${TWEAK_VERSION}_${YT_VERSION}"
+          
+          echo "ipa_name=${COMBINED_NAME}.ipa" >> "$GITHUB_OUTPUT"
+          echo "release_title=${COMBINED_NAME}" >> "$GITHUB_OUTPUT"
           echo "tag=v${YT_VERSION}-${{ github.run_id }}" >> "$GITHUB_OUTPUT"
 
       # ── 2. 저장소 체크아웃 ─────────────────────────────
@@ -217,12 +226,13 @@ jobs:
                -n "${{ github.event.inputs.app_name }}" \
                -b "${{ github.event.inputs.bundle_id }}"
 
-      # ── 9. 결과물 배포 (Release) ────────────────────────
+      # ── 9. 결과물 배포 (Release Title 수정) ────────────────────────
       - name: Release IPA
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
-          name: "YouTube Plus Build - ${{ steps.meta.outputs.tag }}"
+          # 릴리즈 제목을 YTPlus_5.2.1_21.18.4 형식으로 설정
+          name: "${{ steps.meta.outputs.release_title }}"
           files: ${{ steps.meta.outputs.ipa_name }}
           draft: false
           prerelease: false
