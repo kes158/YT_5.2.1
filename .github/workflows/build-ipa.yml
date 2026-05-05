@@ -57,12 +57,14 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # ── 3. 도구 설치 ──────────────────────────
+      # ── 3. 도구 설치 및 PATH 설정 ──────────────────────────
       - name: Install Build Tools
         run: |
           brew install make ldid dpkg aria2
           echo "$(brew --prefix make)/libexec/gnubin" >> $GITHUB_PATH
+          # pyzule 설치 및 실행 경로 등록
           pipx install --force https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       # ── 4. Theos 및 SDK 설정 ──────────────────────────
       - name: Setup Theos
@@ -80,7 +82,7 @@ jobs:
           [[ "$URL" == *"dropbox.com"* ]] && URL="${URL/dl=0/dl=1}"
           aria2c -x 4 -s 4 -k 1M --user-agent="Mozilla/5.0" --retry-wait=5 --max-tries=10 "$URL" -o youtube.ipa
 
-      # ── 6. 트윅 소스 준비 및 헤더 구조화 ────────────
+      # ── 6. 트윅 소스 준비 및 헤더/코드 패치 ────────────
       - name: Prepare Tweaks and Apply Fixes
         run: |
           mkdir -p ${{ github.workspace }}/tweaks_src
@@ -108,21 +110,18 @@ jobs:
           done
           wait
 
-          # 1. 헤더 구조화 및 충돌 해결
-          # CoreImage 충돌 방지를 위해 먼저 삭제
+          # 헤더 구조화 및 충돌 해결
           rm -rf PSHeader/CoreImage
-          
-          # 하이브리드 헤더 구조 생성 (YouTubeHeader/ 폴더 자체와 내부 파일을 모두 인식하게 함)
           mkdir -p $THEOS/include/YouTubeHeader $THEOS/include/PSHeader
           cp -R YouTubeHeader/* $THEOS/include/YouTubeHeader/
-          cp -R YouTubeHeader/* $THEOS/include/ # 하위 호환성
+          cp -R YouTubeHeader/* $THEOS/include/
           cp -R PSHeader/* $THEOS/include/PSHeader/
-          cp -R PSHeader/* $THEOS/include/ # 하위 호환성
+          cp -R PSHeader/* $THEOS/include/
 
           cp -R . ${{ github.workspace }}/
           cd ${{ github.workspace }}
 
-          # 2. DontEatMyContent 패치 (이미 검증됨)
+          # DontEatMyContent 빌드 패치
           if [ -d "DontEatMyContent" ]; then
             sed -i '' "s/^CGFloat constant;/extern CGFloat constant;/" DontEatMyContent/Tweak.h
             sed -i '' '/#import "Tweak.h"/a \
@@ -158,6 +157,9 @@ jobs:
       # ── 8. 인젝션 및 릴리스 ──────────────────────────
       - name: Inject and Release
         run: |
+          # 설치된 pyzule 위치 확인용 (선택사항)
+          which pyzule || echo "pyzule not found in PATH"
+          
           DEBS=$(ls ${{ github.workspace }}/ready_packages/*.deb | tr '\n' ' ')
           pyzule -i ./youtube.ipa -o "${{ steps.meta.outputs.ipa_name }}" -f $DEBS -n "${{ github.event.inputs.app_name }}" -b "${{ github.event.inputs.bundle_id }}"
           
