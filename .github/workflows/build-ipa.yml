@@ -49,7 +49,9 @@ jobs:
         shell: bash
         run: |
           URL="${{ github.event.inputs.decrypted_ipa_url }}"
-          YT_VERSION=$(echo "$URL" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          # URL에서 마지막 버전 패턴 추출 (앞의 5.2.1 트윅버전이 아닌 유튜브버전)
+          # 예: YTPlus_5.2.1_21.16.2.ipa → 21.16.2
+          YT_VERSION=$(echo "$URL" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | tail -1)
           if [[ -z "$YT_VERSION" ]]; then YT_VERSION="Unknown"; fi
           echo "ipa_name=YTPlus_5.2.1_${YT_VERSION}.ipa" >> "$GITHUB_OUTPUT"
           echo "release_name=YTPlus_5.2.1_${YT_VERSION}" >> "$GITHUB_OUTPUT"
@@ -80,6 +82,18 @@ jobs:
             /opt/homebrew/bin/aria2c
           key: brew-${{ runner.os }}-make-ldid-dpkg-aria2-v1
 
+      # ── cyan(pyzule) 캐시 복원 ─────────────────────
+      # pipx install cyan: 매번 35s → 캐시 히트 시 ~0s
+      - name: Cache cyan (pyzule-rw)
+        id: cyan-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/pipx
+            ~/.local/bin/cyan
+            ~/.local/bin/cgen
+          key: cyan-pyzule-rw-${{ runner.os }}-v1
+
       # ── 4. 도구 설치 (캐시 미스 시에만 실제 brew install) ─────────
       - name: Install Build Tools
         shell: bash
@@ -92,10 +106,14 @@ jobs:
           fi
           echo "$(brew --prefix make)/libexec/gnubin" >> $GITHUB_PATH
 
-          # cyan(pyzule-rw) 설치
-          python3 -m pip install --upgrade pipx --break-system-packages 2>/dev/null || true
-          python3 -m pipx ensurepath
-          python3 -m pipx install --force https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
+          # cyan(pyzule-rw) 설치 — 캐시 히트 시 건너뜀 (35s 절감)
+          if [[ "${{ steps.cyan-cache.outputs.cache-hit }}" != "true" ]]; then
+            python3 -m pip install --upgrade pipx --break-system-packages 2>/dev/null || true
+            python3 -m pipx ensurepath
+            python3 -m pipx install --force https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
+          else
+            echo "cyan 캐시 히트"
+          fi
 
           CYAN_PATH=$(python3 -m pipx environment --value PIPX_BIN_DIR 2>/dev/null || echo "$HOME/.local/bin")
           echo "CYAN_BIN_DIR=$CYAN_PATH" >> $GITHUB_ENV
