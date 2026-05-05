@@ -62,16 +62,28 @@ jobs:
         run: |
           brew install make ldid dpkg aria2
           echo "$(brew --prefix make)/libexec/gnubin" >> $GITHUB_PATH
-          
-          # pipx로 pyzule 설치
-          pipx install --force https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
-          
-          # 1. 이후 Step들을 위해 GITHUB_PATH에 추가
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-          
-          # 2. 현재 Step에서 바로 확인하기 위해 PATH에 즉시 반영[cite: 1]
-          export PATH="$HOME/.local/bin:$PATH"
-          which pyzule || echo "pyzule not yet in PATH"
+
+          # pipx 최신화 및 pyzule 설치
+          python3 -m pip install --upgrade pipx --break-system-packages 2>/dev/null || pip3 install --upgrade pipx
+          python3 -m pipx ensurepath
+
+          python3 -m pipx install --force https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
+
+          # pipx가 설치한 실제 경로를 탐색해서 GITHUB_ENV/GITHUB_PATH 양쪽에 등록
+          PYZULE_PATH=$(python3 -m pipx environment --value PIPX_BIN_DIR 2>/dev/null || echo "$HOME/.local/bin")
+          echo "PYZULE_BIN_DIR=$PYZULE_PATH" >> $GITHUB_ENV
+          echo "$PYZULE_PATH" >> $GITHUB_PATH
+
+          # 현재 Step에서도 즉시 반영
+          export PATH="$PYZULE_PATH:$PATH"
+
+          # 설치 검증 (실패 시 CI 즉시 중단)
+          if ! command -v pyzule &>/dev/null; then
+            echo "❌ pyzule 설치 실패! 경로: $PYZULE_PATH"
+            ls -la "$PYZULE_PATH" || true
+            exit 1
+          fi
+          echo "✅ pyzule 설치 확인: $(which pyzule)"
 
       # ── 4. Theos 및 SDK 설정 ──────────────────────────
       - name: Setup Theos
@@ -164,11 +176,19 @@ jobs:
       # ── 8. 인젝션 및 릴리스 (절대 경로 사용) ──────────────────────────
       - name: Inject and Release
         run: |
-          # Step 간 PATH 공유가 안 될 경우를 대비해 직접 경로 지정[cite: 1]
-          PYZULE="$HOME/.local/bin/pyzule"
+          # GITHUB_ENV로 전달된 PYZULE_BIN_DIR 사용 (Step간 PATH 공유 문제 완전 해결)
+          PYZULE="$PYZULE_BIN_DIR/pyzule"
+          
+          if [[ ! -x "$PYZULE" ]]; then
+            echo "❌ pyzule을 찾을 수 없습니다: $PYZULE"
+            echo "PYZULE_BIN_DIR=$PYZULE_BIN_DIR"
+            ls -la "$PYZULE_BIN_DIR" || true
+            exit 1
+          fi
+          
           DEBS=$(ls ${{ github.workspace }}/ready_packages/*.deb | tr '\n' ' ')
           
-          $PYZULE -i ./youtube.ipa -o "${{ steps.meta.outputs.ipa_name }}" -f $DEBS -n "${{ github.event.inputs.app_name }}" -b "${{ github.event.inputs.bundle_id }}"
+          "$PYZULE" -i ./youtube.ipa -o "${{ steps.meta.outputs.ipa_name }}" -f $DEBS -n "${{ github.event.inputs.app_name }}" -b "${{ github.event.inputs.bundle_id }}"
           
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
