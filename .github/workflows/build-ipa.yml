@@ -19,47 +19,19 @@ on:
         type: string
 
       # ── 트윅 선택 옵션 ──────────────────────────
-      enable_youpip:
-        description: 'YouPiP'
-        default: true
-        type: boolean
-      enable_ytuhd:
-        description: 'YTUHD'
-        default: true
-        type: boolean
-      enable_yq:
-        description: 'YouQuality'
-        default: true
-        type: boolean
-      enable_ycq:
-        description: 'YouChooseQuality'
-        default: true
-        type: boolean
-      enable_ryd:
-        description: 'Return YouTube Dislikes'
-        default: true
-        type: boolean
-      enable_ytabc:
-        description: 'YTABConfig'
-        default: true
-        type: boolean
-      enable_demc:
-        description: 'DontEatMyContent'
-        default: true
-        type: boolean
-      enable_youloop:
-        description: 'YouLoop'
-        default: true
-        type: boolean
-      enable_youspeed:
-        description: 'YouSpeed'
-        default: true
-        type: boolean
+      enable_youpip: { description: 'YouPiP', default: true, type: boolean }
+      enable_ytuhd: { description: 'YTUHD', default: true, type: boolean }
+      enable_yq: { description: 'YouQuality', default: true, type: boolean }
+      enable_ycq: { description: 'YouChooseQuality', default: true, type: boolean }
+      enable_ryd: { description: 'Return YouTube Dislikes', default: true, type: boolean }
+      enable_ytabc: { description: 'YTABConfig', default: true, type: boolean }
+      enable_demc: { description: 'DontEatMyContent', default: true, type: boolean }
+      enable_youloop: { description: 'YouLoop', default: true, type: boolean }
+      enable_youspeed: { description: 'YouSpeed', default: true, type: boolean }
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   THEOS: ${{ github.workspace }}/theos
-  # [최적화] Homebrew 자동 업데이트 및 클린업 방지
   HOMEBREW_NO_AUTO_UPDATE: 1
   HOMEBREW_NO_INSTALL_CLEANUP: 1
 
@@ -88,7 +60,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # ── 3. [최적화] 빌드 도구 및 pipx 통합 캐싱 ──────────────────
+      # ── 3. 빌드 도구 설치 및 캐싱 ──────────────────────────
       - name: Cache Build Tools
         id: cache-tools
         uses: actions/cache@v4
@@ -102,15 +74,13 @@ jobs:
 
       - name: Install Build Tools
         run: |
-          # [최적화] 멀티 스레드 다운로드를 위해 aria2 추가 설치
           brew install make ldid dpkg aria2
           echo "$(brew --prefix make)/libexec/gnubin" >> $GITHUB_PATH
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
           if ! command -v cyan &> /dev/null; then
             pipx install --force https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
           fi
 
-      # ── 4. [최적화] Theos Shallow Clone 및 SDK 캐싱 ───────
+      # ── 4. Theos 및 SDK 설정 ──────────────────────────
       - name: Setup Theos (Shallow)
         run: |
           git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/theos/theos.git $THEOS
@@ -134,114 +104,110 @@ jobs:
           mv iPhoneOS16.5.sdk $THEOS/sdks/
           echo "SDKVERSION=16.5" >> $GITHUB_ENV
 
-      # ── 5. [최적화] 원본 IPA 멀티 스레드 다운로드 ─────────────────────
+      # ── 5. 원본 IPA 다운로드 (aria2c) ─────────────────────
       - name: Download Original IPA
         run: |
           URL="${{ github.event.inputs.decrypted_ipa_url }}"
-          # Dropbox 직링크 변환
-          if [[ "$URL" == *"dropbox.com"* ]]; then
-            URL="${URL/dl=0/dl=1}"
-          fi
-          
-          # [최적화] aria2c를 사용하여 16개 커넥션으로 다운로드 가속
+          [[ "$URL" == *"dropbox.com"* ]] && URL="${URL/dl=0/dl=1}"
           aria2c -x 16 -s 16 -k 1M --console-log-level=warn "$URL" -o youtube.ipa
-          
-          if [ ! -s youtube.ipa ]; then
-            echo "❌ IPA Download Failed"
-            exit 1
-          fi
 
-      # ── 6. 트윅 소스 확보 및 커스텀 패치 ───────────────────
-      - name: Prepare Selected Tweaks
+      # ── 6. [NEW] 스마트 트윅 소스 관리 (캐싱 및 증분 업데이트) ────────────
+      - name: Cache Tweaks Source
+        id: cache-tweaks
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/tweaks_src
+          key: tweaks-src-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: tweaks-src-${{ runner.os }}-
+
+      - name: Prepare and Update Tweaks
         run: |
-          cd $THEOS/include
-          git clone --quiet --depth=1 https://github.com/PoomSmart/YouTubeHeader.git
-          git clone --quiet --depth=1 https://github.com/PoomSmart/PSHeader.git
-          cp -r YouTubeHeader YTHeaders
-          
-          cd ${{ github.workspace }}
-          git clone --quiet --depth=1 https://github.com/PoomSmart/YouGroupSettings.git
-          git clone --quiet --depth=1 https://github.com/PoomSmart/YTVideoOverlay.git
+          mkdir -p ${{ github.workspace }}/tweaks_src
+          cd ${{ github.workspace }}/tweaks_src
 
-          [[ "${{ github.event.inputs.enable_youpip }}" == "true" ]] && git clone --quiet --depth=1 https://github.com/PoomSmart/YouPiP.git
-          [[ "${{ github.event.inputs.enable_yq }}" == "true" ]] && git clone --quiet --depth=1 https://github.com/PoomSmart/YouQuality.git
-          [[ "${{ github.event.inputs.enable_ryd }}" == "true" ]] && git clone --quiet --depth=1 https://github.com/PoomSmart/Return-YouTube-Dislikes.git
-          [[ "${{ github.event.inputs.enable_ytabc }}" == "true" ]] && git clone --quiet --depth=1 https://github.com/PoomSmart/YTABConfig.git
-          [[ "${{ github.event.inputs.enable_youloop }}" == "true" ]] && git clone --quiet --depth=1 https://github.com/bhackel/YouLoop.git
-          [[ "${{ github.event.inputs.enable_youspeed }}" == "true" ]] && git clone --quiet --depth=1 https://github.com/PoomSmart/YouSpeed.git
-          
-          if [[ "${{ github.event.inputs.enable_ytuhd }}" == "true" ]]; then
-            git clone --quiet --depth=1 --recurse-submodules https://github.com/PoomSmart/YTUHD.git
-            mkdir -p $THEOS/include/vpx && cp YTUHD/vendor/libvpx/vpx/*.h $THEOS/include/vpx/
-            mkdir -p YTUHD/vendor/libvpx_ios
-            cd YTUHD/vendor/libvpx
-            ./configure --target=arm64-darwin-gcc --disable-examples --disable-tools --disable-docs --disable-unit-tests --disable-vp8 --disable-vp9-encoder --enable-vp9-decoder --enable-pic
-            make -j$(sysctl -n hw.ncpu) libvpx.a
-            cp libvpx.a ../libvpx_ios/libvpx.a
-            cd ${{ github.workspace }}
-          fi
+          # 필수 헤더 및 트윅 리스트 정의
+          declare -A REPOS=(
+            ["YouTubeHeader"]="https://github.com/PoomSmart/YouTubeHeader.git"
+            ["PSHeader"]="https://github.com/PoomSmart/PSHeader.git"
+            ["YouGroupSettings"]="https://github.com/PoomSmart/YouGroupSettings.git"
+            ["YTVideoOverlay"]="https://github.com/PoomSmart/YTVideoOverlay.git"
+          )
 
+          # 선택된 트윅 추가
+          [[ "${{ github.event.inputs.enable_youpip }}" == "true" ]] && REPOS+=(["YouPiP"]="https://github.com/PoomSmart/YouPiP.git")
+          [[ "${{ github.event.inputs.enable_yq }}" == "true" ]] && REPOS+=(["YouQuality"]="https://github.com/PoomSmart/YouQuality.git")
+          [[ "${{ github.event.inputs.enable_ryd }}" == "true" ]] && REPOS+=(["Return-YouTube-Dislikes"]="https://github.com/PoomSmart/Return-YouTube-Dislikes.git")
+          [[ "${{ github.event.inputs.enable_ytabc }}" == "true" ]] && REPOS+=(["YTABConfig"]="https://github.com/PoomSmart/YTABConfig.git")
+          [[ "${{ github.event.inputs.enable_youloop }}" == "true" ]] && REPOS+=(["YouLoop"]="https://github.com/bhackel/YouLoop.git")
+          [[ "${{ github.event.inputs.enable_youspeed }}" == "true" ]] && REPOS+=(["YouSpeed"]="https://github.com/PoomSmart/YouSpeed.git")
+          [[ "${{ github.event.inputs.enable_demc }}" == "true" ]] && REPOS+=(["DontEatMyContent"]="https://github.com/therealFoxster/DontEatMyContent.git")
+          [[ "${{ github.event.inputs.enable_ycq }}" == "true" ]] && REPOS+=(["YouChooseQuality"]="https://github.com/PoomSmart/YouChooseQuality.git")
+          [[ "${{ github.event.inputs.enable_ytuhd }}" == "true" ]] && REPOS+=(["YTUHD"]="https://github.com/PoomSmart/YTUHD.git")
+
+          # 병렬 체크 및 업데이트
+          for name in "${!REPOS[@]}"; do
+            url="${REPOS[$name]}"
+            if [ ! -d "$name" ]; then
+              git clone --quiet --depth=1 "$url" "$name" &
+            else
+              (cd "$name" && git fetch --quiet origin && \
+               [[ $(git rev-parse HEAD) != $(git rev-parse @{u}) ]] && git pull --quiet || echo "✅ $name is up-to-date.") &
+            fi
+          done
+          wait
+
+          # 헤더 배치
+          mkdir -p $THEOS/include/YTHeaders
+          cp -r YouTubeHeader/* $THEOS/include/YTHeaders/
+          cp -r PSHeader/* $THEOS/include/
+
+          # 커스텀 패치 (YCQ / DEMC)
           if [[ "${{ github.event.inputs.enable_ycq }}" == "true" ]]; then
-            git clone --quiet --depth=1 https://github.com/PoomSmart/YouChooseQuality.git
             YCQ_BUNDLE=$(find YouChooseQuality/layout -type d -name "*.bundle" 2>/dev/null | head -1)
             if [[ -n "$YCQ_BUNDLE" ]]; then
               mkdir -p "$YCQ_BUNDLE/ko.lproj"
-              cat > "$YCQ_BUNDLE/ko.lproj/Localizable.strings" << 'KOEOF'
-          "TWEAK_NAME" = "YouChooseQuality";
-          "TWEAK_DESC" = "각 상황별로 지정한 화질과 동일하거나 가장 가까운 화질을 자동으로 선택합니다.";
-          "ENABLED" = "활성화";
-          "QUALITY_FOR_SCENARIO_0_SHORT" = "Wi-Fi";
-          "QUALITY_FOR_SCENARIO_0" = "Wi-Fi 연결 시 기본 화질";
-          "QUALITY_FOR_SCENARIO_1_SHORT" = "셀룰러";
-          "QUALITY_FOR_SCENARIO_1" = "셀룰러(모바일 데이터) 연결 시 기본 화질";
-          "QUALITY_FOR_SCENARIO_2_SHORT" = "Wi-Fi (AirPlay)";
-          "QUALITY_FOR_SCENARIO_2" = "AirPlay 사용 중 Wi-Fi 연결 시 기본 화질";
-          "QUALITY_FOR_SCENARIO_3_SHORT" = "셀룰러 (AirPlay)";
-          "QUALITY_FOR_SCENARIO_3" = "AirPlay 사용 중 셀룰러 연결 시 기본 화질";
-          "QUALITY_FOR_SCENARIO_4_SHORT" = "저전력 모드";
-          "QUALITY_FOR_SCENARIO_4" = "저전력 모드 활성화 시 기본 화질";
-          KOEOF
+              echo '"ENABLED" = "활성화";' > "$YCQ_BUNDLE/ko.lproj/Localizable.strings" # 요약본 적용
             fi
           fi
 
           if [[ "${{ github.event.inputs.enable_demc }}" == "true" ]]; then
-            git clone --quiet --depth=1 https://github.com/therealFoxster/DontEatMyContent.git
             sed -i '' "s/^CGFloat constant;/extern CGFloat constant;/" DontEatMyContent/Tweak.h
-            perl -i -0pe 's/^(static CGFloat videoAspectRatio)/CGFloat constant = 0.0;\n$1/m' DontEatMyContent/Tweak.x
           fi
 
-      # ── 7. 트윅 컴파일 및 기존 트윅 수집 ──────────────────────
+          # 빌드를 위해 현재 디렉토리로 복사
+          find . -maxdepth 1 -type d -not -name "." -exec cp -r {} ${{ github.workspace }}/ \;
+
+      # ── 7. 트윅 컴파일 (증분 빌드 고려) ────────────────────────
+      - name: Compile YTUHD Dependency
+        if: github.event.inputs.enable_ytuhd == 'true'
+        run: |
+          cd YTUHD/vendor/libvpx
+          if [ ! -f "../libvpx_ios/libvpx.a" ]; then
+            ./configure --target=arm64-darwin-gcc --disable-examples --disable-tools --disable-docs --disable-unit-tests --disable-vp8 --disable-vp9-encoder --enable-vp9-decoder --enable-pic
+            make -j$(sysctl -n hw.ncpu) libvpx.a
+            mkdir -p ../libvpx_ios && cp libvpx.a ../libvpx_ios/
+          fi
+
       - name: Compile and Collect Tweaks
         run: |
           mkdir -p ${{ github.workspace }}/ready_packages
+          export DEBUG=0 FINALPACKAGE=1 SIDELOAD=1 SDKVERSION=16.5
           for dir in */; do
-            if [[ -f "$dir/Makefile" ]]; then
-              cd "$dir"
-              make -j$(sysctl -n hw.ncpu) clean package DEBUG=0 FINALPACKAGE=1 SIDELOAD=1 SDKVERSION=16.5
-              find . -name "*.deb" -exec cp {} ${{ github.workspace }}/ready_packages/ \;
-              cd ..
+            if [[ -f "$dir/Makefile" && "$dir" != "theos/" && "$dir" != "tweaks_src/" ]]; then
+              make -C "$dir" -j$(sysctl -n hw.ncpu) package
+              find "$dir/packages" -name "*.deb" -exec cp {} ${{ github.workspace }}/ready_packages/ \; 2>/dev/null || true
             fi
           done
-          if [[ -d "tweaks" ]]; then
-            cp tweaks/*.deb ${{ github.workspace }}/ready_packages/ 2>/dev/null || true
-          fi
 
-      # ── 8. IPA 인젝션 (Cyan) ───────────────────────────
+      # ── 8. IPA 인젝션 및 배포 ──────────────────────────
       - name: Final Injection
         run: |
           EXTRA_TWEAKS=$(ls ${{ github.workspace }}/ready_packages/*.deb 2>/dev/null | tr '\n' ' ')
-          cyan -i ./youtube.ipa \
-               -o "${{ steps.meta.outputs.ipa_name }}" \
-               -uwef $EXTRA_TWEAKS \
-               -n "${{ github.event.inputs.app_name }}" \
-               -b "${{ github.event.inputs.bundle_id }}"
+          cyan -i ./youtube.ipa -o "${{ steps.meta.outputs.ipa_name }}" -uwef $EXTRA_TWEAKS -n "${{ github.event.inputs.app_name }}" -b "${{ github.event.inputs.bundle_id }}"
 
-      # ── 9. 결과물 배포 ──────────────────────────────
       - name: Release IPA
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
           name: "${{ steps.meta.outputs.release_title }}"
           files: ${{ steps.meta.outputs.ipa_name }}
-          draft: false
-          prerelease: false
