@@ -429,7 +429,7 @@ jobs:
           fi
 
           # YTPlus 본체 deb (tweaks/ 폴더에 고정 저장)
-          YTPLUS_DEB=$(ls ${{ github.workspace }}/tweaks/com.dvntm.ytlite_*.deb 2>/dev/null | head -1)
+          YTPLUS_DEB=$(ls ${{ github.workspace }}/tweaks/com.dvntm.ytlite_5.2.1_iphoneos-arm_patch_zarzel_*.deb 2>/dev/null | head -1)
           if [[ -z "$YTPLUS_DEB" ]]; then
             echo "YTPlus 본체 deb를 찾을 수 없습니다!"
             exit 1
