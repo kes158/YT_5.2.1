@@ -424,4 +424,5 @@ jobs:
           name: ${{ steps.meta.outputs.release_name }}
           files: ${{ steps.meta.outputs.ipa_name }}
           overwrite_files: true
+          make_latest: true
           token: ${{ secrets.GITHUB_TOKEN }}
