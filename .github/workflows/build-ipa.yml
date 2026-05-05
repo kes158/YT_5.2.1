@@ -73,14 +73,14 @@ jobs:
           mv sdks/iPhoneOS16.5.sdk $THEOS/sdks/
           echo "SDKVERSION=16.5" >> $GITHUB_ENV
 
-      # ── 5. IPA 다운로드 (Dropbox 차단 방지 적용) ─────────────────────
+      # ── 5. IPA 다운로드 (Dropbox 차단 방지) ─────────────────────
       - name: Download Original IPA
         run: |
           URL="${{ github.event.inputs.decrypted_ipa_url }}"
           [[ "$URL" == *"dropbox.com"* ]] && URL="${URL/dl=0/dl=1}"
           aria2c -x 4 -s 4 -k 1M --user-agent="Mozilla/5.0" --retry-wait=5 --max-tries=10 "$URL" -o youtube.ipa
 
-      # ── 6. 트윅 소스 준비 및 패치 (핵심 수정 구역) ────────────
+      # ── 6. 트윅 소스 준비 및 패치 ────────────
       - name: Prepare Tweaks and Apply Fixes
         run: |
           mkdir -p ${{ github.workspace }}/tweaks_src
@@ -118,15 +118,16 @@ jobs:
           cp -R . ${{ github.workspace }}/
           cd ${{ github.workspace }}
 
-          # 2. DontEatMyContent 링커 에러 (_constant) 해결 패치
+          # 2. DontEatMyContent 빌드 에러 해결 패치
           if [ -d "DontEatMyContent" ]; then
             echo "🔧 Patching DontEatMyContent..."
-            # Tweak.h 에서 중복 선언 제거 및 extern 처리
+            # Tweak.h 선언 수정
             sed -i '' "s/^CGFloat constant;/extern CGFloat constant;/" DontEatMyContent/Tweak.h
-            # Tweak.x 상단에 실제 변수 정의(Definition) 주입
-            sed -i '' "1i\\
-            CGFloat constant = 0;\\
-            " DontEatMyContent/Tweak.x
+            # Tweak.x 수정: 첫 줄에 변수를 주입하는 대신, 헤더 임포트 뒤에 안전하게 주입
+            # #import <UIKit/UIKit.h> 뒤에 CGFloat constant = 0; 을 넣도록 변경
+            sed -i '' '/#import "Tweak.h"/a \
+            CGFloat constant = 0;
+            ' DontEatMyContent/Tweak.x
           fi
 
       # ── 7. 컴파일 및 패키징 ────────────────────────
@@ -135,7 +136,6 @@ jobs:
           mkdir -p ${{ github.workspace }}/ready_packages
           export DEBUG=0 FINALPACKAGE=1 SIDELOAD=1 SDKVERSION=16.5
           
-          # YTUHD 종속성 빌드
           if [ -d "YTUHD" ]; then
             cd YTUHD/vendor/libvpx
             ./configure --target=arm64-darwin-gcc --disable-examples --disable-tools --disable-docs --enable-vp9-decoder --enable-pic
@@ -144,7 +144,6 @@ jobs:
             cd ${{ github.workspace }}
           fi
 
-          # 트윅 개별 빌드
           for dir in */; do
             if [[ -f "$dir/Makefile" && "$dir" != "theos/" ]]; then
               echo "🔨 Building $dir..."
