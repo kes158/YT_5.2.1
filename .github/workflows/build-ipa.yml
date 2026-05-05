@@ -46,6 +46,7 @@ jobs:
       # ── 1. 메타데이터 추출 ───────────────────────
       - name: Extract Metadata
         id: meta
+        shell: bash
         run: |
           URL="${{ github.event.inputs.decrypted_ipa_url }}"
           YT_VERSION=$(echo "$URL" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
@@ -62,6 +63,7 @@ jobs:
 
       # ── 3. 도구 설치 및 PATH 환경 설정 ──────────────────────────
       - name: Install Build Tools
+        shell: bash
         run: |
           brew install make ldid dpkg aria2
           echo "$(brew --prefix make)/libexec/gnubin" >> $GITHUB_PATH
@@ -84,6 +86,7 @@ jobs:
 
       # ── 4. Theos 및 SDK 설정 ──────────────────────────
       - name: Setup Theos
+        shell: bash
         run: |
           git clone --depth 1 --recurse-submodules https://github.com/theos/theos.git $THEOS
           mkdir -p $THEOS/sdks
@@ -93,6 +96,7 @@ jobs:
 
       # ── 5. IPA 다운로드 ─────────────────────────────────────────
       - name: Download Original IPA
+        shell: bash
         run: |
           URL="${{ github.event.inputs.decrypted_ipa_url }}"
           [[ "$URL" == *"dropbox.com"* ]] && URL="${URL/dl=0/dl=1}"
@@ -103,6 +107,7 @@ jobs:
       #   - 최신 SHA와 일치하는 캐시 있음 → 재사용 (클론/빌드 없음)
       #   - 없음 → 클론 → 빌드 → tweaks/에 저장 → 저장소에 push
       - name: Check Cache and Build Tweaks Selectively
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -272,6 +277,7 @@ jobs:
       # ── 7. 새 캐시가 있으면 저장소에 push ────────────────────────
       - name: Commit Updated Tweak Cache
         if: env.CACHE_UPDATED == 'true'
+        shell: bash
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -281,6 +287,7 @@ jobs:
 
       # ── 8. 인젝션 및 릴리스 ──────────────────────────────────────
       - name: Inject and Release
+        shell: bash
         run: |
           CYAN="$CYAN_BIN_DIR/cyan"
 
