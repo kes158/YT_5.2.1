@@ -178,7 +178,7 @@ jobs:
           SHA_STORE=$(mktemp -d)
           mkdir -p "$CACHE_DIR" "$BUILD_DIR" "$READY_DIR"
           CACHE_UPDATED=false
-          HEADER_ONLY="YouTubeHeader PSHeader YouGroupSettings YTVideoOverlay"
+          HEADER_ONLY="YouTubeHeader PSHeader"
 
           # ── tweaks/ 폴더의 패치된 .deb 파일 복사 ───────────────────
           # com.dvntm.ytlite_5.2.1_iphoneos-arm_patch_zarzel.deb 같은
