@@ -148,6 +148,28 @@ jobs:
           echo "release_name=YTPlus_5.2.1_${YT_VERSION}"  >> "$GITHUB_OUTPUT"
           echo "tag=YTPlus_5.2.1_${YT_VERSION}"           >> "$GITHUB_OUTPUT"
 
+          # ── 릴리즈 노트 생성 ──────────────────────────────────────────
+          TWEAK_LIST="YTPlus"
+          [[ "${{ github.event.inputs.enable_ytabc }}"    == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYTABConfig"
+          [[ "${{ github.event.inputs.enable_yq }}"       == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYouQuality"
+          [[ "${{ github.event.inputs.enable_ycq }}"      == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYouChooseQuality"
+          [[ "${{ github.event.inputs.enable_ryd }}"      == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nReturn YouTube Dislikes"
+          [[ "${{ github.event.inputs.enable_demc }}"     == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nDontEatMyContent"
+          [[ "${{ github.event.inputs.enable_youpip }}"   == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYouPiP"
+          [[ "${{ github.event.inputs.enable_ytuhd }}"    == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYTUHD"
+          [[ "${{ github.event.inputs.enable_youloop }}"  == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYouLoop"
+          [[ "${{ github.event.inputs.enable_youspeed }}" == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYouSpeed"
+
+          {
+            echo "release_notes<<EOF"
+            echo "Updated to YouTube v${YT_VERSION}"
+            echo ""
+            echo "Included Tweaks:"
+            echo ""
+            echo -e "$TWEAK_LIST"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       # ── 6. 트윅 캐시 확인 및 선택적 클론/빌드 ───────────────────────
       - name: Check Cache and Build Tweaks Selectively
         shell: bash
@@ -428,6 +450,7 @@ jobs:
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
           name: ${{ steps.meta.outputs.release_name }}
+          body: ${{ steps.meta.outputs.release_notes }}
           files: ${{ steps.meta.outputs.ipa_name }}
           overwrite_files: true
           make_latest: true
