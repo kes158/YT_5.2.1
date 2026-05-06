@@ -422,24 +422,13 @@ jobs:
 
           echo "✅ IPA 완료: ${{ steps.meta.outputs.ipa_name }}"
 
+
       - name: Upload to Release
-
         uses: softprops/action-gh-release@v2
-
         with:
-
           tag_name: ${{ steps.meta.outputs.tag }}
-
           name: ${{ steps.meta.outputs.release_name }}
-
           files: ${{ steps.meta.outputs.ipa_name }}
-
           overwrite_files: true
-
           make_latest: true
-
-          generate_release_notes: false
-
-          body: ""
-
           token: ${{ secrets.GITHUB_TOKEN }}
