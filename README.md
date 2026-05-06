@@ -1,4 +1,4 @@
-# YouTube Plus (구 YTLite)
+# YouTube Plus
 iOS용 YouTube 강화 트윅으로, 100가지 이상의 커스터마이징 옵션을 제공합니다.
 
 
