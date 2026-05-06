@@ -293,33 +293,6 @@ jobs:
             ' "$BUILD_DIR/DontEatMyContent/Tweak.x" 2>/dev/null || true
           fi
 
-          # ── 5-2단계: YouChooseQuality 한국어 로컬라이제이션 ──────────
-          # make package 전에 실행해야 빌드된 deb에 포함됨
-          if [[ -d "$BUILD_DIR/YouChooseQuality" ]]; then
-            YCQ_BUNDLE=$(find "$BUILD_DIR/YouChooseQuality/layout" -type d -name "*.bundle" 2>/dev/null | head -1)
-            if [[ -n "$YCQ_BUNDLE" ]]; then
-              mkdir -p "$YCQ_BUNDLE/ko.lproj"
-              cat > "$YCQ_BUNDLE/ko.lproj/Localizable.strings" << 'KOEOF'
-"TWEAK_NAME" = "YouChooseQuality";
-"TWEAK_DESC" = "각 상황별로 지정한 화질과 동일하거나 가장 가까운 화질을 자동으로 선택합니다.";
-"ENABLED" = "활성화";
-"QUALITY_FOR_SCENARIO_0_SHORT" = "Wi-Fi";
-"QUALITY_FOR_SCENARIO_0" = "Wi-Fi 연결 시 기본 화질";
-"QUALITY_FOR_SCENARIO_1_SHORT" = "셀룰러";
-"QUALITY_FOR_SCENARIO_1" = "셀룰러(모바일 데이터) 연결 시 기본 화질";
-"QUALITY_FOR_SCENARIO_2_SHORT" = "Wi-Fi (AirPlay)";
-"QUALITY_FOR_SCENARIO_2" = "AirPlay 사용 중 Wi-Fi 연결 시 기본 화질";
-"QUALITY_FOR_SCENARIO_3_SHORT" = "셀룰러 (AirPlay)";
-"QUALITY_FOR_SCENARIO_3" = "AirPlay 사용 중 셀룰러 연결 시 기본 화질";
-"QUALITY_FOR_SCENARIO_4_SHORT" = "저전력 모드";
-"QUALITY_FOR_SCENARIO_4" = "저전력 모드 활성화 시 기본 화질";
-KOEOF
-              echo "  ✅ YouChooseQuality 한국어 로컬라이제이션 추가"
-            else
-              echo "  ⚠️  YouChooseQuality bundle 없음, 로컬라이제이션 건너뜀"
-            fi
-          fi
-
           # ── 6단계: 병렬 빌드 ────────────────────────────────────────
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
