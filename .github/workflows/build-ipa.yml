@@ -273,7 +273,7 @@ jobs:
           fi
 
           echo "Fetch latest SHAs"
-          SHA_PIDS=()
+          SHA_PIDS=("")
           for repo in "${REPOS[@]}"; do
             NAME="${repo%%|*}"
             rest="${repo#*|}"
@@ -289,10 +289,13 @@ jobs:
             ) &
             SHA_PIDS+=("$!")
           done
-          for pid in "${SHA_PIDS[@]}"; do wait "$pid" || true; done
+          for pid in "${SHA_PIDS[@]}"; do
+            [[ -n "$pid" ]] || continue
+            wait "$pid" || true
+          done
 
           echo "Resolve cache and clone misses"
-          CLONE_PIDS=()
+          CLONE_PIDS=("")
           CLONE_LIST=()
           for repo in "${REPOS[@]}"; do
             NAME="${repo%%|*}"
@@ -331,7 +334,10 @@ jobs:
             fi
           done
 
-          for pid in "${CLONE_PIDS[@]}"; do wait "$pid" || true; done
+          for pid in "${CLONE_PIDS[@]}"; do
+            [[ -n "$pid" ]] || continue
+            wait "$pid" || true
+          done
 
           if [[ -d "$BUILD_DIR/YouTubeHeader" ]]; then
             mkdir -p "$THEOS/include/YouTubeHeader"
@@ -351,7 +357,7 @@ jobs:
           fi
 
           export DEBUG=0 FINALPACKAGE=1 SIDELOAD=1 SDKVERSION=16.5
-          BUILD_PIDS=()
+          BUILD_PIDS=("")
           for NAME in "${CLONE_LIST[@]}"; do
             DIR="$BUILD_DIR/$NAME"
             SHA="$(cat "$SHA_STORE/${NAME}.sha" 2>/dev/null || echo unknown)"
@@ -391,7 +397,10 @@ jobs:
             ) &
             BUILD_PIDS+=("$!")
           done
-          for pid in "${BUILD_PIDS[@]}"; do wait "$pid"; done
+          for pid in "${BUILD_PIDS[@]}"; do
+            [[ -n "$pid" ]] || continue
+            wait "$pid"
+          done
 
           [[ -f "$SHA_STORE/CACHE_UPDATED" ]] && CACHE_UPDATED=true
 
