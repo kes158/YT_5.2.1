@@ -189,7 +189,6 @@ jobs:
           REPOS=(
             "YouTubeHeader|https://github.com/PoomSmart/YouTubeHeader.git|true"
             "PSHeader|https://github.com/PoomSmart/PSHeader.git|true"
-            "YouGroupSettings|https://github.com/PoomSmart/YouGroupSettings.git|true"
             "YTVideoOverlay|https://github.com/PoomSmart/YTVideoOverlay.git|true"
             "DontEatMyContent|https://github.com/therealFoxster/DontEatMyContent.git|${{ github.event.inputs.enable_demc }}"
             "YouPiP|https://github.com/PoomSmart/YouPiP.git|${{ github.event.inputs.enable_youpip }}"
@@ -257,6 +256,58 @@ jobs:
             fi
           }
 
+          cache_repo_deb_version() {
+            local base_url="$1"
+            local package_id="$2"
+            local wanted_version="$3"
+            local cache_name="$4"
+            local output_name="$5"
+            local packages_file file_url cache_key cached target
+
+            packages_file="$(mktemp)"
+            curl -fsSL --retry 5 "${base_url%/}/Packages" -o "$packages_file"
+            file_url="$(
+              awk -v pkg="$package_id" -v ver="$wanted_version" '
+                BEGIN { RS=""; FS="\n"; selected = "" }
+                {
+                  package_name = architecture = version = filename = ""
+                  for (i = 1; i <= NF; i++) {
+                    if ($i ~ /^Package: /) package_name = substr($i, 10)
+                    if ($i ~ /^Version: /) version = substr($i, 10)
+                    if ($i ~ /^Architecture: /) architecture = substr($i, 15)
+                    if ($i ~ /^Filename: /) filename = substr($i, 11)
+                  }
+                  if (package_name == pkg && version == ver && architecture == "iphoneos-arm") {
+                    selected = filename
+                  }
+                }
+                END { print selected }
+              ' "$packages_file"
+            )"
+            rm -f "$packages_file"
+
+            if [[ -z "$file_url" ]]; then
+              echo "Could not find ${package_id} ${wanted_version} in ${base_url}/Packages"
+              return 1
+            fi
+
+            [[ "$file_url" == http* ]] || file_url="${base_url%/}/${file_url#./}"
+            cache_key="$(printf "%s|%s" "$file_url" "$wanted_version" | shasum -a 256 | awk '{print substr($1, 1, 12)}')"
+            cached="$(find "$CACHE_DIR" -maxdepth 1 -name "${cache_name}_${wanted_version}_repo_${cache_key}.deb" -print -quit 2>/dev/null || true)"
+            target="$READY_DIR/$output_name"
+
+            if [[ -n "$cached" ]]; then
+              echo "  pinned repo cache hit $cache_name $wanted_version ($cache_key)"
+              cp "$cached" "$target"
+            else
+              echo "  pinned repo cache miss $cache_name $wanted_version ($cache_key), downloading"
+              curl -fL --retry 5 "$file_url" -o "$target"
+              rm -f "$CACHE_DIR/${cache_name}_"*_repo_*.deb
+              cp "$target" "$CACHE_DIR/${cache_name}_${wanted_version}_repo_${cache_key}.deb"
+              touch "$SHA_STORE/CACHE_UPDATED"
+            fi
+          }
+
           echo "Copy local patched debs"
           for deb in "$CACHE_DIR"/*.deb; do
             [[ -f "$deb" ]] || continue
@@ -268,6 +319,9 @@ jobs:
             cp "$deb" "$READY_DIR/"
             echo "  copied $(basename "$deb")"
           done
+
+          echo "Prepare pinned YouGroupSettings dependency"
+          cache_repo_deb_version "https://repo.chariz.com" "com.ps.yougroupsettings" "1.0.7" "YouGroupSettings" "YouGroupSettings_1.0.7.deb"
 
           if [[ "${{ github.event.inputs.enable_ytuhd }}" == "true" ]]; then
             echo "Prepare official YTUHD deb"
@@ -424,6 +478,20 @@ jobs:
           if [[ "$DEB_COUNT" -eq 0 ]]; then
             echo "No deb files to inject"
             exit 1
+          fi
+          YGS_COUNT="$(find "$READY_DIR" -name "*YouGroupSettings*.deb" | wc -l | tr -d ' ')"
+          if [[ "$YGS_COUNT" -ne 1 ]]; then
+            echo "Expected exactly one YouGroupSettings deb, found $YGS_COUNT"
+            find "$READY_DIR" -name "*YouGroupSettings*.deb" -print
+            exit 1
+          fi
+          if [[ "${{ github.event.inputs.enable_ytabc_reset }}" != "true" ]]; then
+            RESET_COUNT="$(find "$READY_DIR" -name "*YTABConfigReset*.deb" | wc -l | tr -d ' ')"
+            if [[ "$RESET_COUNT" -ne 0 ]]; then
+              echo "YTABConfigReset is disabled but still present in ready packages"
+              find "$READY_DIR" -name "*YTABConfigReset*.deb" -print
+              exit 1
+            fi
           fi
           if [[ "${{ github.event.inputs.enable_ytuhd }}" == "true" ]] && ! find "$READY_DIR" -name "YTUHD*.deb" -print -quit | grep -q .; then
             echo "YTUHD is enabled but no YTUHD deb is ready"
