@@ -90,6 +90,11 @@ jobs:
           for pkg in make ldid dpkg; do
             brew list "$pkg" >/dev/null 2>&1 || NEED_BREW+=("$pkg")
           done
+          if [[ "${{ github.event.inputs.enable_ytuhd }}" == "true" ]]; then
+            for pkg in meson ninja; do
+              brew list "$pkg" >/dev/null 2>&1 || NEED_BREW+=("$pkg")
+            done
+          fi
           if [[ ${#NEED_BREW[@]} -gt 1 ]]; then
             NEED_BREW=("${NEED_BREW[@]:1}")
             brew install "${NEED_BREW[@]}"
@@ -450,6 +455,66 @@ jobs:
 
             [[ -d "$DIR" ]] || continue
             (
+              if [[ "$NAME" == "YTUHD" ]]; then
+                if [[ -d "$DIR/vendor/libvpx" && ! -f "$DIR/vendor/libvpx_ios/libvpx.a" ]]; then
+                  echo "  building YTUHD libvpx..."
+                  pushd "$DIR/vendor/libvpx" >/dev/null
+                  make distclean >/dev/null 2>&1 || true
+                  ./configure --target=arm64-darwin-gcc \
+                    --disable-examples --disable-tools --disable-docs \
+                    --disable-unit-tests --disable-webm-io \
+                    --enable-vp9-decoder --enable-pic > /tmp/build_YTUHD_libvpx.log 2>&1
+                  make -j"$(sysctl -n hw.ncpu)" libvpx.a >> /tmp/build_YTUHD_libvpx.log 2>&1
+                  mkdir -p "$DIR/vendor/libvpx_ios"
+                  cp libvpx.a "$DIR/vendor/libvpx_ios/libvpx.a"
+                  popd >/dev/null
+                fi
+
+                if [[ -d "$DIR/vendor/dav1d" && ! -f "$DIR/vendor/dav1d_ios/libdav1d.a" ]]; then
+                  echo "  building YTUHD dav1d..."
+                  SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
+                  CLANG_PATH="$(xcrun --sdk iphoneos --find clang)"
+                  AR_PATH="$(xcrun --sdk iphoneos --find ar)"
+                  STRIP_PATH="$(xcrun --sdk iphoneos --find strip)"
+                  CROSS_FILE="$DIR/vendor/dav1d/ios-arm64-cross.txt"
+                  {
+                    echo "[binaries]"
+                    echo "c = '$CLANG_PATH'"
+                    echo "ar = '$AR_PATH'"
+                    echo "strip = '$STRIP_PATH'"
+                    echo ""
+                    echo "[host_machine]"
+                    echo "system = 'darwin'"
+                    echo "cpu_family = 'aarch64'"
+                    echo "cpu = 'arm64'"
+                    echo "endian = 'little'"
+                    echo ""
+                    echo "[built-in options]"
+                    echo "c_args = ['-arch', 'arm64', '-isysroot', '$SDK_PATH', '-miphoneos-version-min=11.0']"
+                    echo "c_link_args = ['-arch', 'arm64', '-isysroot', '$SDK_PATH', '-miphoneos-version-min=11.0']"
+                  } > "$CROSS_FILE"
+
+                  rm -rf "$DIR/vendor/dav1d/build-ios"
+                  meson setup "$DIR/vendor/dav1d/build-ios" "$DIR/vendor/dav1d" \
+                    --cross-file "$CROSS_FILE" \
+                    --default-library static \
+                    -Denable_tools=false \
+                    -Denable_tests=false \
+                    -Denable_examples=false \
+                    -Denable_docs=false \
+                    -Denable_asm=false > /tmp/build_YTUHD_dav1d.log 2>&1
+                  ninja -C "$DIR/vendor/dav1d/build-ios" >> /tmp/build_YTUHD_dav1d.log 2>&1
+                  mkdir -p "$DIR/vendor/dav1d_ios"
+                  DAV1D_LIB="$(find "$DIR/vendor/dav1d/build-ios" -name "libdav1d.a" -print -quit)"
+                  if [[ -z "$DAV1D_LIB" ]]; then
+                    echo "  dav1d build did not produce libdav1d.a"
+                    tail -80 /tmp/build_YTUHD_dav1d.log || true
+                    exit 1
+                  fi
+                  cp "$DAV1D_LIB" "$DIR/vendor/dav1d_ios/libdav1d.a"
+                fi
+              fi
+
               pushd "$DIR" >/dev/null
               if [[ -f Makefile ]]; then
                 make clean >/dev/null 2>&1 || true
