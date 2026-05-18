@@ -236,8 +236,8 @@ jobs:
             echo "=== STABLE MODE: using pinned .deb files from tweaks/ ==="
 
             # Deduplicate: for each tweak key keep only the newest file (by mtime).
-            # This prevents the YouGroupSettings x3 problem when tweaks/ has old leftovers.
-            declare -A SELECTED_DEB
+            # Uses a temp dir instead of declare -A to stay compatible with all shells.
+            DEDUP_DIR="$(mktemp -d)"
 
             tweak_key() {
               local f="$1"
@@ -253,16 +253,22 @@ jobs:
             for deb in "$CACHE_DIR"/*.deb; do
               [[ -f "$deb" ]] || continue
               key="$(tweak_key "$(basename "$deb")")"
-              if [[ -n "${SELECTED_DEB[$key]:-}" ]]; then
-                [[ "$deb" -nt "${SELECTED_DEB[$key]}" ]] && SELECTED_DEB[$key]="$deb"
+              # sanitize key for use as filename
+              safe_key="${key//[^a-zA-Z0-9_-]/_}"
+              slot="$DEDUP_DIR/$safe_key"
+              if [[ -f "$slot" ]]; then
+                existing="$(cat "$slot")"
+                [[ "$deb" -nt "$existing" ]] && echo "$deb" > "$slot"
               else
-                SELECTED_DEB[$key]="$deb"
+                echo "$deb" > "$slot"
               fi
             done
 
             count=0
-            for key in "${!SELECTED_DEB[@]}"; do
-              deb="${SELECTED_DEB[$key]}"
+            for slot in "$DEDUP_DIR"/*; do
+              [[ -f "$slot" ]] || continue
+              deb="$(cat "$slot")"
+              [[ -f "$deb" ]] || continue
               fname="$(basename "$deb")"
 
               # Skip debs whose feature flag is disabled.
