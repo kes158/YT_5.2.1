@@ -38,11 +38,6 @@ on:
       enable_ycq:         { description: "YouChooseQuality",        default: true,  type: boolean }
       enable_ryd:         { description: "Return YouTube Dislikes", default: true,  type: boolean }
       enable_ytabc:       { description: "YTABConfig",              default: true,  type: boolean }
-      enable_ytabc_reset:
-        description: "YTABConfigReset"
-        required: true
-        default: false
-        type: boolean
       enable_demc:        { description: "DontEatMyContent",        default: true,  type: boolean }
       enable_youloop:     { description: "YouLoop",                 default: true,  type: boolean }
       enable_youspeed:    { description: "YouSpeed",                default: true,  type: boolean }
