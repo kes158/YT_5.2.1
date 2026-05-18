@@ -408,10 +408,17 @@ jobs:
               [[ -f "$deb" ]] || continue
               fname="$(basename "$deb" .deb)"
               sha_part="${fname##*_}"
+              # Skip auto-managed debs (built from source or downloaded from repo)
               if [[ "$fname" == *_repo_* || "$fname" == *_direct_* \
                     || "$sha_part" =~ ^[0-9a-fA-F]{8}$  \
                     || "$sha_part" =~ ^[0-9a-fA-F]{12}$ \
                     || "$sha_part" =~ ^[0-9a-fA-F]{40}$ ]]; then
+                continue
+              fi
+              # YouGroupSettings is always supplied by cache_repo_deb_version below;
+              # skip any copy here to prevent duplicates.
+              if [[ "$(basename "$deb")" == *YouGroupSettings* ]]; then
+                echo "  skip (managed by repo): $(basename "$deb")"
                 continue
               fi
               cp "$deb" "$READY_DIR/"
