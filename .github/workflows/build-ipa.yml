@@ -735,7 +735,7 @@ jobs:
           fi
           fi
           if [[ "${{ github.event.inputs.enable_ytuhd }}" == "true" ]] && \
-           ! find "$READY_DIR" \( -name "YTUHD*.deb" -o -name "com.ps.ytuhd*.deb" \) \
+           ! find "$READY_DIR" \( -name "YTUHD*.deb" -o -name "com.ps.ytuhd*.deb" -o -name "dev.water888.ytuhd*.deb" \) \
                -print -quit | grep -q .; then
           echo "YTUHD is enabled but no YTUHD deb is ready"
           exit 1
@@ -811,4 +811,3 @@ jobs:
           overwrite_files: true
           make_latest: true
           token: ${{ secrets.GITHUB_TOKEN }}
-          
