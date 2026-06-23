@@ -385,7 +385,7 @@ jobs:
             "Return-YouTube-Dislikes|https://github.com/PoomSmart/Return-YouTube-Dislikes.git|${{ github.event.inputs.enable_ryd }}"
             "YouLoop|https://github.com/bhackel/YouLoop.git|${{ github.event.inputs.enable_youloop }}"
             "YouSpeed|https://github.com/PoomSmart/YouSpeed.git|${{ github.event.inputs.enable_youspeed }}"
-            "YTUHD|https://github.com/PoomSmart/YTUHD.git|${{ github.event.inputs.enable_ytuhd }}"
+            "YTUHD|https://github.com/Tonwalter888/YTUHD.git|${{ github.event.inputs.enable_ytuhd }}"
           )
 
           HEADER_ONLY="YouTubeHeader PSHeader"
