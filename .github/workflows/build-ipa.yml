@@ -89,6 +89,12 @@ on:
         default: true
         type: boolean
 
+      enable_ytx:
+        description: 'YouTube X'
+        required: false
+        default: true
+        type: boolean
+
       include_open_youtube:
         description: 'Open in YouTube Safari extension'
         required: false
@@ -102,7 +108,7 @@ env:
   HOMEBREW_NO_INSTALL_CLEANUP: 1
   HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
   # 저장소 내 캐시 deb 보관 경로
-  DEB_CACHE_DIR: tweaks/prebuilt
+  DEB_CACHE_DIR: tweaks
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -143,6 +149,7 @@ jobs:
           [[ "${{ github.event.inputs.enable_ytuhd }}"         == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYTUHD"
           [[ "${{ github.event.inputs.enable_youloop }}"       == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYouLoop"
           [[ "${{ github.event.inputs.enable_youspeed }}"      == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYouSpeed"
+          [[ "${{ github.event.inputs.enable_ytx }}"           == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYouTube X"
           [[ "${{ github.event.inputs.include_open_youtube }}" == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nOpenYouTubeSafariExtension"
 
           {
@@ -282,7 +289,7 @@ jobs:
           echo "✅ IPA 다운로드 완료"
           YTPLUS_DEB="${{ github.workspace }}/${{ env.DEB_CACHE_DIR }}/com.dvntm.ytlite_5.2.1_iphoneos-arm_patch_zarzel.deb"
           if [[ ! -f "$YTPLUS_DEB" ]]; then
-            echo "❌ tweaks/prebuilt/com.dvntm.ytlite_5.2.1_iphoneos-arm_patch_zarzel.deb 파일이 없습니다."
+            echo "❌ tweaks/com.dvntm.ytlite_5.2.1_iphoneos-arm_patch_zarzel.deb 파일이 없습니다."
             exit 1
           fi
           cp "$YTPLUS_DEB" "${{ github.workspace }}/ytplus.deb"
@@ -298,12 +305,31 @@ jobs:
           CACHE_DIR="${{ github.workspace }}/${{ env.DEB_CACHE_DIR }}"
           if [[ ! -d "$CACHE_DIR" ]]; then
             echo "❌ $CACHE_DIR 폴더가 없습니다."
-            echo "   처음 사용 시 'Check for tweak updates' 옵션을 켜고 한 번 실행해 deb를 생성하세요."
             exit 1
           fi
           echo "📦 저장소 캐시 deb 복사 중..."
-          for deb in "$CACHE_DIR"/*.deb; do
-            [[ -e "$deb" ]] && cp "$deb" "${{ github.workspace }}/" && echo "  ✅ $(basename $deb)"
+
+          # 저장소 실제 파일명 → 작업 디렉터리 내부 이름 매핑
+          declare -A DEB_MAP=(
+            ["YouPiP_ac617f21.deb"]="youpip.deb"
+            ["YTUHD_28da1b91.deb"]="ytuhd.deb"
+            ["YouQuality_3199d594.deb"]="yq.deb"
+            ["YouChooseQuality_8b829739.deb"]="ycq.deb"
+            ["Return-YouTube-Dislikes_15b04c87.deb"]="ryd.deb"
+            ["YTABConfig_3cdf53b3.deb"]="ytabc.deb"
+            ["DontEatMyContent_176adb9a.deb"]="demc.deb"
+            ["YouLoop_43c39ccf.deb"]="youloop.deb"
+            ["YouSpeed_5cc5be93.deb"]="youspeed.deb"
+            ["ytx.deb"]="ytx.deb"
+          )
+
+          for src_name in "${!DEB_MAP[@]}"; do
+            dst_name="${DEB_MAP[$src_name]}"
+            src_path="$CACHE_DIR/$src_name"
+            if [[ -f "$src_path" ]]; then
+              cp "$src_path" "${{ github.workspace }}/$dst_name"
+              echo "  ✅ $src_name → $dst_name"
+            fi
           done
           echo "✅ 저장소 캐시 deb 복사 완료"
 
@@ -559,6 +585,19 @@ jobs:
           cd YouSpeed && make package DEBUG=0 FINALPACKAGE=1
           mv packages/*.deb ../youspeed.deb
 
+      # ── YouTube X (prebuilt) ───────────────────────────────
+      - name: Use YouTube X prebuilt deb
+        if: ${{ inputs.enable_ytx }}
+        run: |
+          YTX_PREBUILT="${{ github.workspace }}/${{ env.DEB_CACHE_DIR }}/ytx.deb"
+          if [[ ! -f "$YTX_PREBUILT" ]]; then
+            echo "❌ tweaks/ytx.deb 파일이 없습니다."
+            echo "   com_ps_ytx_1_7_22_iphoneos-arm.deb 를 tweaks/ytx.deb 로 이름 바꿔서 커밋하세요."
+            exit 1
+          fi
+          cp "$YTX_PREBUILT" "${{ github.workspace }}/ytx.deb"
+          echo "✅ YouTube X prebuilt deb 복사 완료"
+
       # ── 빌드된 deb를 저장소에 커밋 (update_tweaks 시에만) ──
       - name: Save updated debs to repository
         if: ${{ inputs.update_tweaks }}
@@ -568,11 +607,27 @@ jobs:
 
           echo "📦 새로 빌드된 deb를 저장소 캐시로 보관..."
           UPDATED=0
-          for deb in ygs.deb ytvo.deb youpip.deb ytuhd.deb yq.deb ycq.deb \
-                     ryd.deb ytabc.deb demc.deb youloop.deb youspeed.deb; do
-            if [[ -f "${{ github.workspace }}/$deb" ]]; then
-              cp "${{ github.workspace }}/$deb" "$CACHE_DIR/$deb"
-              echo "  ✅ $deb 보관 완료"
+
+          # 작업 디렉터리 내부 이름 → 저장소 실제 파일명 매핑
+          declare -A SAVE_MAP=(
+            ["youpip.deb"]="YouPiP_ac617f21.deb"
+            ["ytuhd.deb"]="YTUHD_28da1b91.deb"
+            ["yq.deb"]="YouQuality_3199d594.deb"
+            ["ycq.deb"]="YouChooseQuality_8b829739.deb"
+            ["ryd.deb"]="Return-YouTube-Dislikes_15b04c87.deb"
+            ["ytabc.deb"]="YTABConfig_3cdf53b3.deb"
+            ["demc.deb"]="DontEatMyContent_176adb9a.deb"
+            ["youloop.deb"]="YouLoop_43c39ccf.deb"
+            ["youspeed.deb"]="YouSpeed_5cc5be93.deb"
+            ["ytx.deb"]="ytx.deb"
+          )
+
+          for src_name in "${!SAVE_MAP[@]}"; do
+            dst_name="${SAVE_MAP[$src_name]}"
+            src_path="${{ github.workspace }}/$src_name"
+            if [[ -f "$src_path" ]]; then
+              cp "$src_path" "$CACHE_DIR/$dst_name"
+              echo "  ✅ $src_name → $dst_name 보관 완료"
               UPDATED=$((UPDATED+1))
             fi
           done
