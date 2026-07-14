@@ -4,223 +4,153 @@ on:
   workflow_dispatch:
     inputs:
       decrypted_ipa_url:
-        description: "Decrypted YouTube IPA direct download URL"
+        description: 'Decrypted YouTube IPA direct download URL'
         required: true
         type: string
+
+      # ── 기본 설정 ──────────────────────────────────────────
+      ytplus_version:
+        description: 'YTPlus Tweak Version'
+        required: true
+        default: '5.2.1'
+        type: string
+
       app_name:
-        description: "App Name"
+        description: 'App Name (Optional)'
         required: true
-        default: "YouTube"
+        default: 'YouTube'
         type: string
+
       bundle_id:
-        description: "Bundle ID"
+        description: 'BundleID (Optional)'
         required: true
-        default: "com.google.ios.youtube"
+        default: 'com.google.ios.youtube'
         type: string
-      # ── NEW ──────────────────────────────────────────────────────────────────
-      # When false (default) the workflow uses only the .deb files already
-      # committed to tweaks/ – no network access to repos, no building.
-      # When true the workflow fetches the latest SHA for every enabled tweak,
-      # rebuilds anything that has changed, and commits the updated cache back.
+
+      # ── 트윅 업데이트 옵션 ─────────────────────────────────
       update_tweaks:
-        description: "Check for Tweak Updates"
+        description: 'Check for tweak updates and rebuild (re-clones all sources)'
+        required: false
         default: false
         type: boolean
-      # ─────────────────────────────────────────────────────────────────────────
-      enable_youpip:      { description: "YouPiP",                  default: true,  type: boolean }
-      enable_ytuhd:       { description: "YTUHD",                   default: true,  type: boolean }
-      enable_yq:          { description: "YouQuality",              default: true,  type: boolean }
-      enable_ycq:         { description: "YouChooseQuality",        default: true,  type: boolean }
-      enable_ryd:         { description: "Return YouTube Dislikes", default: true,  type: boolean }
-      enable_ytabc:       { description: "YTABConfig",              default: true,  type: boolean }
-      enable_demc:        { description: "DontEatMyContent",        default: true,  type: boolean }
-      enable_youloop:     { description: "YouLoop",                 default: true,  type: boolean }
-      enable_youspeed:    { description: "YouSpeed",                default: true,  type: boolean }
-      enable_opensafari:  { description: "OpenYouTubeSafariExtension", default: true,  type: boolean }
 
-concurrency:
-  group: build-ytplus-${{ github.ref }}
-  cancel-in-progress: true
+      # ── 트윅 선택 ──────────────────────────────────────────
+      enable_youpip:
+        description: 'YouPiP'
+        required: false
+        default: true
+        type: boolean
+
+      enable_ytuhd:
+        description: 'YTUHD'
+        required: false
+        default: true
+        type: boolean
+
+      enable_yq:
+        description: 'YouQuality'
+        required: false
+        default: true
+        type: boolean
+
+      enable_ycq:
+        description: 'YouChooseQuality'
+        required: false
+        default: true
+        type: boolean
+
+      enable_ryd:
+        description: 'Return YouTube Dislikes'
+        required: false
+        default: true
+        type: boolean
+
+      enable_ytabc:
+        description: 'YTABConfig'
+        required: false
+        default: true
+        type: boolean
+
+      enable_demc:
+        description: 'DontEatMyContent'
+        required: false
+        default: true
+        type: boolean
+
+      enable_youloop:
+        description: 'YouLoop'
+        required: false
+        default: true
+        type: boolean
+
+      enable_youspeed:
+        description: 'YouSpeed'
+        required: false
+        default: true
+        type: boolean
+
+      enable_ytx:
+        description: 'YouTube X'
+        required: false
+        default: true
+        type: boolean
+
+      include_open_youtube:
+        description: 'Open in YouTube Safari extension'
+        required: false
+        default: true
+        type: boolean
+      # ───────────────────────────────────────────────────────
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  THEOS: ${{ github.workspace }}/theos
   HOMEBREW_NO_AUTO_UPDATE: 1
   HOMEBREW_NO_INSTALL_CLEANUP: 1
-  HOMEBREW_NO_ANALYTICS: 1
-  SDKVERSION: 16.5
+  HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+  # 저장소 내 캐시 deb 보관 경로
+  DEB_CACHE_DIR: tweaks/prebuilt
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
-    name: Build YTPlus
+    name: Build YTPlus IPA
     runs-on: macos-latest
     permissions:
       contents: write
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 1
-          fetch-tags: false
-
-      # cyan is needed in every mode (injection step)
-      - name: Cache cyan
-        id: cyan-cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.local/pipx
-            ~/.local/bin/cyan
-            ~/.local/bin/cgen
-          key: cyan-pyzule-rw-${{ runner.os }}-v3
-
-      # Theos is only needed when we are rebuilding tweaks from source
-      - name: Cache Theos
-        if: github.event.inputs.update_tweaks == 'true'
-        id: theos-cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.THEOS }}
-          key: theos-${{ runner.os }}-sdk16.5-v2
-
-      - name: Install Build Tools
-        shell: bash
+      # ── 1. 버전 추출 ────────────────────────────────────────
+      - name: Extract YouTube version from URL
+        id: version
         run: |
-          set -euo pipefail
-
-          NEED_BREW=("")
-          for pkg in make ldid dpkg; do
-            brew list "$pkg" >/dev/null 2>&1 || NEED_BREW+=("$pkg")
-          done
-
-          # meson/ninja are only required when building YTUHD from source
-          if [[ "${{ github.event.inputs.update_tweaks }}" == "true" && \
-                "${{ github.event.inputs.enable_ytuhd }}"  == "true" ]]; then
-            for pkg in meson ninja; do
-              brew list "$pkg" >/dev/null 2>&1 || NEED_BREW+=("$pkg")
-            done
-          fi
-
-          if [[ ${#NEED_BREW[@]} -gt 1 ]]; then
-            NEED_BREW=("${NEED_BREW[@]:1}")
-            brew install "${NEED_BREW[@]}"
-          else
-            echo "Homebrew tools already installed"
-          fi
-          echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
-
-          if [[ "${{ steps.cyan-cache.outputs.cache-hit }}" != "true" ]]; then
-            python3 -m pip install --upgrade pipx --break-system-packages 2>/dev/null || true
-            python3 -m pipx ensurepath
-            python3 -m pipx install --force https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
-          else
-            echo "cyan cache hit"
-          fi
-
-          CYAN_PATH="$(python3 -m pipx environment --value PIPX_BIN_DIR 2>/dev/null || echo "$HOME/.local/bin")"
-          echo "CYAN_BIN_DIR=$CYAN_PATH" >> "$GITHUB_ENV"
-          echo "$CYAN_PATH" >> "$GITHUB_PATH"
-          export PATH="$CYAN_PATH:$PATH"
-
-          command -v cyan >/dev/null
-          echo "cyan: $(command -v cyan)"
-
-      - name: Download IPA and Setup Theos
-        id: meta
-        shell: bash
-        run: |
-          set -euo pipefail
-
           URL="${{ github.event.inputs.decrypted_ipa_url }}"
-          if [[ "$URL" == *"dropbox.com"* ]]; then
-            URL="${URL/dl=0/dl=1}"
-          fi
-
-          # Start IPA download in the background while setting up Theos (update mode)
-          curl -L --fail --retry 8 --retry-delay 5 --connect-timeout 30 \
-            -A "Mozilla/5.0" "$URL" -o youtube.ipa &
-          IPA_PID=$!
-
-          if [[ "${{ github.event.inputs.update_tweaks }}" == "true" ]]; then
-            if [[ "${{ steps.theos-cache.outputs.cache-hit }}" != "true" ]]; then
-              git clone --depth 1 --recurse-submodules https://github.com/theos/theos.git "$THEOS"
-              mkdir -p "$THEOS/sdks"
-              git clone --quiet --depth 1 https://github.com/theos/sdks/ /tmp/theos-sdks
-              mv /tmp/theos-sdks/iPhoneOS16.5.sdk "$THEOS/sdks/"
-            else
-              echo "Theos cache hit"
-            fi
-          else
-            echo "Stable mode: Theos setup skipped"
-          fi
-
-          wait "$IPA_PID"
-          test -s youtube.ipa
-          echo "IPA downloaded: $(du -h youtube.ipa | awk '{print $1}')"
-
-          # ── iPhone + iPad 통합 지원: UIDeviceFamily 2 추가 & UISupportedDevices 제거 ──
-          echo "Patching Info.plist for iPhone + iPad support..."
-          _PLIST_IN_IPA="$(unzip -Z1 youtube.ipa "Payload/*.app/Info.plist" 2>/dev/null | head -1 || true)"
-          if [[ -n "$_PLIST_IN_IPA" ]]; then
-            _IPAD_TMP="$(mktemp -d)"
-            unzip -p youtube.ipa "$_PLIST_IN_IPA" > "$_IPAD_TMP/Info.plist"
-            # 1) UIDeviceFamily에 iPad(2) 추가
-            if ! /usr/libexec/PlistBuddy -c "Print UIDeviceFamily" "$_IPAD_TMP/Info.plist" 2>/dev/null | grep -q "^ *2$"; then
-              _FAM_COUNT="$(/usr/libexec/PlistBuddy -c "Print UIDeviceFamily" "$_IPAD_TMP/Info.plist" 2>/dev/null | grep -c "Integer" || echo 1)"
-              /usr/libexec/PlistBuddy -c "Add UIDeviceFamily:${_FAM_COUNT} integer 2" "$_IPAD_TMP/Info.plist" \
-                && echo "  UIDeviceFamily: iPad(2) added" \
-                || echo "  Warning: UIDeviceFamily patch failed"
-            else
-              echo "  UIDeviceFamily already includes iPad"
-            fi
-            # 2) UISupportedDevices 삭제 (iPhone 모델만 나열되어 iPad 설치를 차단하는 키)
-            /usr/libexec/PlistBuddy -c "Delete UISupportedDevices" "$_IPAD_TMP/Info.plist" 2>/dev/null \
-              && echo "  UISupportedDevices removed (iPad install unblocked)" \
-              || echo "  UISupportedDevices not present, skipping"
-            mkdir -p "$_IPAD_TMP/$(dirname "$_PLIST_IN_IPA")"
-            cp "$_IPAD_TMP/Info.plist" "$_IPAD_TMP/$_PLIST_IN_IPA"
-            (cd "$_IPAD_TMP" && zip -u "$GITHUB_WORKSPACE/youtube.ipa" "$_PLIST_IN_IPA")
-            rm -rf "$_IPAD_TMP"
-            echo "  IPA repacked: iPhone + iPad 모두 설치 가능"
-          else
-            echo "  Warning: Info.plist not found in IPA, skipping patch"
-          fi
-          # ─────────────────────────────────────────────────────────────────────
-
-          PLIST_PATH="$(unzip -Z1 youtube.ipa "Payload/*.app/Info.plist" 2>/dev/null | head -1 || true)"
-          YT_VERSION=""
-          if [[ -n "$PLIST_PATH" ]]; then
-            PLIST_TMP="$(mktemp)"
-            unzip -p youtube.ipa "$PLIST_PATH" > "$PLIST_TMP"
-            YT_VERSION="$(plutil -extract CFBundleShortVersionString raw "$PLIST_TMP" 2>/dev/null || true)"
-            if [[ -z "$YT_VERSION" ]]; then
-              YT_VERSION="$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$PLIST_TMP" 2>/dev/null || true)"
-            fi
-            rm -f "$PLIST_TMP"
-          fi
+          YT_VERSION=$(echo "$URL" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
           if [[ -z "$YT_VERSION" ]]; then
-            YT_VERSION="$(echo "$URL" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | tail -1 || true)"
+            echo "❌ URL에서 유튜브 버전을 찾을 수 없습니다."
+            exit 1
           fi
-          [[ -n "$YT_VERSION" ]] || YT_VERSION="Unknown"
-
-          echo "YouTube version: $YT_VERSION"
-          echo "ipa_name=YTPlus_5.2.1_${YT_VERSION}.ipa"    >> "$GITHUB_OUTPUT"
-          echo "release_name=YTPlus_5.2.1_${YT_VERSION}"    >> "$GITHUB_OUTPUT"
-          echo "tag=YTPlus_5.2.1_${YT_VERSION}"             >> "$GITHUB_OUTPUT"
+          echo "✅ YouTube 버전: $YT_VERSION"
+          YTLITE_VER="${{ github.event.inputs.ytplus_version }}"
+          echo "yt_version=$YT_VERSION"                              >> "$GITHUB_OUTPUT"
+          echo "ipa_name=YTPlus_${YTLITE_VER}_${YT_VERSION}.ipa"    >> "$GITHUB_OUTPUT"
+          echo "release_tag=YTPlus_${YTLITE_VER}_${YT_VERSION}"     >> "$GITHUB_OUTPUT"
+          echo "ytplus_version=${YTLITE_VER}"                        >> "$GITHUB_OUTPUT"
 
           TWEAK_LIST="YTPlus"
-          [[ "${{ github.event.inputs.enable_ytabc }}"    == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYTABConfig"
-          [[ "${{ github.event.inputs.enable_yq }}"       == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYouQuality"
-          [[ "${{ github.event.inputs.enable_ycq }}"      == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYouChooseQuality"
-          [[ "${{ github.event.inputs.enable_ryd }}"      == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nReturn YouTube Dislikes"
-          [[ "${{ github.event.inputs.enable_demc }}"     == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nDontEatMyContent"
-          [[ "${{ github.event.inputs.enable_youpip }}"   == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYouPiP"
-          [[ "${{ github.event.inputs.enable_ytuhd }}"    == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYTUHD"
-          [[ "${{ github.event.inputs.enable_youloop }}"  == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYouLoop"
-          [[ "${{ github.event.inputs.enable_youspeed }}" == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYouSpeed"
-          [[ "${{ github.event.inputs.enable_opensafari }}" == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nOpenYouTubeSafariExtension"
+          [[ "${{ github.event.inputs.enable_ytabc }}"         == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYTABConfig"
+          [[ "${{ github.event.inputs.enable_yq }}"            == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYouQuality"
+          [[ "${{ github.event.inputs.enable_ycq }}"           == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYouChooseQuality"
+          [[ "${{ github.event.inputs.enable_ryd }}"           == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nReturn YouTube Dislikes"
+          [[ "${{ github.event.inputs.enable_demc }}"          == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nDontEatMyContent"
+          [[ "${{ github.event.inputs.enable_youpip }}"        == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYouPiP"
+          [[ "${{ github.event.inputs.enable_ytuhd }}"         == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYTUHD"
+          [[ "${{ github.event.inputs.enable_youloop }}"       == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYouLoop"
+          [[ "${{ github.event.inputs.enable_youspeed }}"      == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYouSpeed"
+          [[ "${{ github.event.inputs.enable_ytx }}"           == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYouTube X"
+          [[ "${{ github.event.inputs.include_open_youtube }}" == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nOpenYouTubeSafariExtension"
 
           {
             echo "release_notes<<EOF"
@@ -232,582 +162,504 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      # ════════════════════════════════════════════════════════════════════════
-      # PREPARE TWEAKS
-      #
-      # STABLE MODE  (update_tweaks = false, default)
-      #   • Copy .deb files committed to tweaks/ → ready_packages/
-      #   • Respects each enable_* flag so disabled tweaks are not injected
-      #   • No network calls to GitHub repos, no Theos build
-      #
-      # UPDATE MODE  (update_tweaks = true)
-      #   • Fetch latest commit SHA for every enabled tweak
-      #   • Cache hit  → copy existing .deb from tweaks/
-      #   • Cache miss → git clone → make package → save to tweaks/
-      #   • Commit any new/updated .deb files back to the repo
-      # ════════════════════════════════════════════════════════════════════════
-      - name: Prepare Tweaks (Stable Mode)
-        if: github.event.inputs.update_tweaks != 'true'
-        shell: bash
+      # ── 2. 저장소 체크아웃 ─────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # 트윅 deb 업데이트 커밋을 위해 전체 히스토리 필요
+          fetch-depth: 0
+
+      # ── 3. 트윅 repo HEAD SHA 일괄 조회 (update_tweaks 시에만) ──
+      - name: Fetch tweak repo SHAs (parallel)
+        id: sha
+        if: ${{ inputs.update_tweaks }}
         run: |
-          set -euo pipefail
+          get_sha() { git ls-remote "$1" HEAD 2>/dev/null | awk '{print $1}' | cut -c1-12; }
 
-          CACHE_DIR="${{ github.workspace }}/tweaks"
-          READY_DIR="${{ github.workspace }}/ready_packages"
-          mkdir -p "$CACHE_DIR" "$READY_DIR"
+          get_sha https://github.com/PoomSmart/YouGroupSettings        > /tmp/sha_ygs &
+          get_sha https://github.com/PoomSmart/YTVideoOverlay          > /tmp/sha_ytvo &
+          get_sha https://github.com/PoomSmart/YouPiP                  > /tmp/sha_youpip &
+          get_sha https://github.com/Tonwalter888/YTUHD                > /tmp/sha_ytuhd &
+          get_sha https://github.com/PoomSmart/YouQuality              > /tmp/sha_yq &
+          get_sha https://github.com/PoomSmart/YouChooseQuality        > /tmp/sha_ycq &
+          get_sha https://github.com/PoomSmart/Return-YouTube-Dislikes > /tmp/sha_ryd &
+          get_sha https://github.com/PoomSmart/YTABConfig              > /tmp/sha_ytabc &
+          get_sha https://github.com/therealFoxster/DontEatMyContent   > /tmp/sha_demc &
+          get_sha https://github.com/bhackel/YouLoop                   > /tmp/sha_youloop &
+          get_sha https://github.com/PoomSmart/YouSpeed                > /tmp/sha_youspeed &
+          get_sha https://github.com/PoomSmart/YouTubeHeader           > /tmp/sha_headers &
+          get_sha https://github.com/PoomSmart/PSHeader                > /tmp/sha_psheader &
+          wait
 
-          echo "=== STABLE MODE: using pinned .deb files from tweaks/ ==="
+          echo "ygs=$(cat /tmp/sha_ygs)"           >> "$GITHUB_OUTPUT"
+          echo "ytvo=$(cat /tmp/sha_ytvo)"          >> "$GITHUB_OUTPUT"
+          echo "youpip=$(cat /tmp/sha_youpip)"      >> "$GITHUB_OUTPUT"
+          echo "ytuhd=$(cat /tmp/sha_ytuhd)"        >> "$GITHUB_OUTPUT"
+          echo "yq=$(cat /tmp/sha_yq)"             >> "$GITHUB_OUTPUT"
+          echo "ycq=$(cat /tmp/sha_ycq)"           >> "$GITHUB_OUTPUT"
+          echo "ryd=$(cat /tmp/sha_ryd)"           >> "$GITHUB_OUTPUT"
+          echo "ytabc=$(cat /tmp/sha_ytabc)"       >> "$GITHUB_OUTPUT"
+          echo "demc=$(cat /tmp/sha_demc)"         >> "$GITHUB_OUTPUT"
+          echo "youloop=$(cat /tmp/sha_youloop)"   >> "$GITHUB_OUTPUT"
+          echo "youspeed=$(cat /tmp/sha_youspeed)" >> "$GITHUB_OUTPUT"
+          echo "headers=$(cat /tmp/sha_headers)"   >> "$GITHUB_OUTPUT"
+          echo "psheader=$(cat /tmp/sha_psheader)" >> "$GITHUB_OUTPUT"
 
-            # Deduplicate: for each tweak key keep only the newest file (by mtime).
-            # Uses a temp dir instead of declare -A to stay compatible with all shells.
-            DEDUP_DIR="$(mktemp -d)"
+      # ── 4. brew 캐시 + 의존성 설치 ─────────────────────────
+      - name: Cache Homebrew packages
+        id: cache-brew
+        uses: actions/cache@v4
+        with:
+          path: |
+            /opt/homebrew/Cellar/make
+            /opt/homebrew/Cellar/ldid
+            /opt/homebrew/Cellar/dpkg
+            /opt/homebrew/Cellar/libplist
+            /opt/homebrew/Cellar/gpatch
+            /opt/homebrew/Cellar/libmd
+          key: brew-arm64-make-ldid-dpkg-v1
 
-            tweak_key() {
-              local f="$1"
-              for k in YouGroupSettings YTVideoOverlay YouPiP YTUHD \
-                        YouQuality YouChooseQuality Return-YouTube-Dislikes \
-                        YTABConfigReset YTABConfig DontEatMyContent \
-                        YouLoop YouSpeed libundirect; do
-                [[ "$f" == *"$k"* ]] && { echo "$k"; return; }
-              done
-              echo "__other__:$f"
-            }
+      - name: Install dependencies
+        run: |
+          if [[ "${{ steps.cache-brew.outputs.cache-hit }}" != 'true' ]]; then
+            brew install make ldid dpkg --quiet
+          else
+            brew link --overwrite make ldid dpkg libplist libmd 2>/dev/null || \
+              brew install make ldid dpkg --quiet
+          fi
+          if ! ldid -v &>/dev/null; then
+            echo "⚠️ ldid 동작 실패 → 재설치"
+            brew reinstall ldid --quiet
+          fi
+          echo "/opt/homebrew/opt/make/libexec/gnubin" >> $GITHUB_PATH
 
-            for deb in "$CACHE_DIR"/*.deb; do
-              [[ -f "$deb" ]] || continue
-              key="$(tweak_key "$(basename "$deb")")"
-              # sanitize key for use as filename
-              safe_key="${key//[^a-zA-Z0-9_-]/_}"
-              slot="$DEDUP_DIR/$safe_key"
-              if [[ -f "$slot" ]]; then
-                existing="$(cat "$slot")"
-                [[ "$deb" -nt "$existing" ]] && echo "$deb" > "$slot"
-              else
-                echo "$deb" > "$slot"
-              fi
-            done
-
-            count=0
-            for slot in "$DEDUP_DIR"/*; do
-              [[ -f "$slot" ]] || continue
-              deb="$(cat "$slot")"
-              [[ -f "$deb" ]] || continue
-              fname="$(basename "$deb")"
-
-              # Skip debs whose feature flag is disabled.
-              # Note: YTABConfigReset must be checked BEFORE YTABConfig.
-              case "$fname" in
-                *YTUHD*)
-                  [[ "${{ github.event.inputs.enable_ytuhd }}"       == "true" ]] \
-                    || { echo "  skip (disabled): $fname"; continue; } ;;
-                *YouPiP*)
-                  [[ "${{ github.event.inputs.enable_youpip }}"      == "true" ]] \
-                    || { echo "  skip (disabled): $fname"; continue; } ;;
-                *YouChooseQuality*)
-                  [[ "${{ github.event.inputs.enable_ycq }}"         == "true" ]] \
-                    || { echo "  skip (disabled): $fname"; continue; } ;;
-                *YouQuality*)
-                  [[ "${{ github.event.inputs.enable_yq }}"          == "true" ]] \
-                    || { echo "  skip (disabled): $fname"; continue; } ;;
-                *Return-YouTube-Dislikes*|*ReturnYouTubeDislikes*)
-                  [[ "${{ github.event.inputs.enable_ryd }}"         == "true" ]] \
-                    || { echo "  skip (disabled): $fname"; continue; } ;;
-                *YTABConfigReset*)
-                  [[ "${{ github.event.inputs.enable_ytabc_reset }}" == "true" ]] \
-                    || { echo "  skip (disabled): $fname"; continue; } ;;
-                *YTABConfig*)
-                  [[ "${{ github.event.inputs.enable_ytabc }}"       == "true" ]] \
-                    || { echo "  skip (disabled): $fname"; continue; } ;;
-                *DontEatMyContent*)
-                  [[ "${{ github.event.inputs.enable_demc }}"        == "true" ]] \
-                    || { echo "  skip (disabled): $fname"; continue; } ;;
-                *YouLoop*)
-                  [[ "${{ github.event.inputs.enable_youloop }}"     == "true" ]] \
-                    || { echo "  skip (disabled): $fname"; continue; } ;;
-                *YouSpeed*)
-                  [[ "${{ github.event.inputs.enable_youspeed }}"    == "true" ]] \
-                    || { echo "  skip (disabled): $fname"; continue; } ;;
-                # Always include: YouGroupSettings, YTVideoOverlay, libundirect, etc.
-              esac
-
-              cp "$deb" "$READY_DIR/"
-              echo "  copied $fname"
-              count=$((count + 1))
-            done
-            # .appex 복사 (enable_opensafari가 true일 때만)
-            if [[ "${{ github.event.inputs.enable_opensafari }}" == "true" ]]; then
-              for appex_zip in "$CACHE_DIR"/*.appex.zip; do
-                [[ -f "$appex_zip" ]] || continue
-                unzip -o "$appex_zip" -d "$READY_DIR/"
-                echo "  unzipped $(basename "$appex_zip")"
-              done
-              for appex in "$CACHE_DIR"/*.appex; do
-                [[ -f "$appex" ]] || continue
-                cp "$appex" "$READY_DIR/"
-                echo "  copied $(basename "$appex")"
-              done
-            fi
-
-
-            if [[ "$count" -eq 0 ]]; then
-              echo "ERROR: No .deb files found in tweaks/."
-              echo "Run this workflow once with 'Check for Tweak Updates' enabled to populate the cache."
-              exit 1
-            fi
-
-            echo "CACHE_UPDATED=false" >> "$GITHUB_ENV"
-
-      - name: Prepare Tweaks (Update Mode)
-        if: github.event.inputs.update_tweaks == 'true'
-        shell: bash
+      # ── 5. Theos 캐시 ──────────────────────────────────────
+      - name: Cache Theos
+        id: theos
+        uses: actions/cache@v4
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          cache-name: theos_cache_9bc7340
+        with:
+          path: theos/
+          key: ${{ env.cache-name }}
+          restore-keys: ${{ env.cache-name }}
+
+      - name: Setup Theos
+        if: steps.theos.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: theos/theos
+          ref: 9bc73406cf80b711ef4d02c15ff1dedc4478a275
+          path: theos
+          submodules: recursive
+
+      - name: Download iOS SDK
+        if: steps.theos.outputs.cache-hit != 'true'
         run: |
-          set -euo pipefail
+          git clone --quiet -n --depth=1 --filter=tree:0 https://github.com/theos/sdks/
+          cd sdks
+          git sparse-checkout set --no-cone iPhoneOS16.5.sdk
+          git checkout
+          mv *.sdk ${{ github.workspace }}/theos/sdks
 
-          CACHE_DIR="${{ github.workspace }}/tweaks"
-          BUILD_DIR="${{ github.workspace }}/tweaks-build"
-          READY_DIR="${{ github.workspace }}/ready_packages"
-          SHA_STORE="$(mktemp -d)"
-          mkdir -p "$CACHE_DIR" "$BUILD_DIR" "$READY_DIR"
-          CACHE_UPDATED=false
+      # ── 6. cyan 캐시 + 설치 ────────────────────────────────
+      - name: Cache cyan (pipx)
+        id: cache-cyan
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/pipx
+            ~/.local/bin
+          key: cyan-pyzule-rw-main-v2
 
-          echo "=== UPDATE MODE: checking for tweak updates ==="
-
-          REPOS=(
-            "YouTubeHeader|https://github.com/PoomSmart/YouTubeHeader.git|true"
-            "PSHeader|https://github.com/PoomSmart/PSHeader.git|true"
-            "YTVideoOverlay|https://github.com/PoomSmart/YTVideoOverlay.git|true"
-            "DontEatMyContent|https://github.com/therealFoxster/DontEatMyContent.git|${{ github.event.inputs.enable_demc }}"
-            "YouPiP|https://github.com/PoomSmart/YouPiP.git|${{ github.event.inputs.enable_youpip }}"
-            "YouQuality|https://github.com/PoomSmart/YouQuality.git|${{ github.event.inputs.enable_yq }}"
-            "YouChooseQuality|https://github.com/PoomSmart/YouChooseQuality.git|${{ github.event.inputs.enable_ycq }}"
-            "Return-YouTube-Dislikes|https://github.com/PoomSmart/Return-YouTube-Dislikes.git|${{ github.event.inputs.enable_ryd }}"
-            "YouLoop|https://github.com/bhackel/YouLoop.git|${{ github.event.inputs.enable_youloop }}"
-            "YouSpeed|https://github.com/PoomSmart/YouSpeed.git|${{ github.event.inputs.enable_youspeed }}"
-            "YTUHD|https://github.com/Tonwalter888/YTUHD.git|${{ github.event.inputs.enable_ytuhd }}"
-          )
-
-          HEADER_ONLY="YouTubeHeader PSHeader"
-
-          # ── helper: download latest .deb from a Cydia/APT repo ──────────
-          cache_repo_deb() {
-            local base_url="$1" package_id="$2" cache_name="$3" output_name="$4"
-            local packages_file file_url cache_key cached target
-
-            packages_file="$(mktemp)"
-            curl -fsSL --retry 5 "${base_url%/}/Packages" -o "$packages_file"
-            file_url="$(
-              awk -v pkg="$package_id" '
-                BEGIN { RS=""; FS="\n" }
-                {
-                  package_name = architecture = filename = ""
-                  for (i = 1; i <= NF; i++) {
-                    if ($i ~ /^Package: /)      package_name = substr($i, 10)
-                    if ($i ~ /^Architecture: /) architecture = substr($i, 15)
-                    if ($i ~ /^Filename: /)     filename     = substr($i, 11)
-                  }
-                  if (package_name == pkg && architecture == "iphoneos-arm") {
-                    print filename; exit
-                  }
-                }
-              ' "$packages_file"
-            )"
-            rm -f "$packages_file"
-
-            if [[ -z "$file_url" ]]; then
-              echo "Could not find ${package_id} in ${base_url}/Packages"; return 1
-            fi
-            [[ "$file_url" == http* ]] || file_url="${base_url%/}/${file_url#./}"
-            cache_key="$(printf "%s" "$file_url" | shasum -a 256 | awk '{print substr($1,1,12)}')"
-            cached="$(find "$CACHE_DIR" -maxdepth 1 -name "${cache_name}_repo_${cache_key}.deb" -print -quit 2>/dev/null || true)"
-            target="$READY_DIR/$output_name"
-
-            if [[ -n "$cached" ]]; then
-              echo "  repo cache hit $cache_name ($cache_key)"
-              cp "$cached" "$target"
-            else
-              echo "  repo changed $cache_name ($cache_key), downloading"
-              curl -fL --retry 5 "$file_url" -o "$target"
-              rm -f "$CACHE_DIR/${cache_name}_repo_"*.deb
-              cp "$target" "$CACHE_DIR/${cache_name}_repo_${cache_key}.deb"
-              touch "$SHA_STORE/CACHE_UPDATED"
-            fi
-          }
-
-          # ── helper: download a pinned version from a Cydia/APT repo ─────
-          cache_repo_deb_version() {
-            local base_url="$1" package_id="$2" wanted_version="$3" cache_name="$4" output_name="$5"
-            local packages_file file_url cache_key cached target
-
-            packages_file="$(mktemp)"
-            curl -fsSL --retry 5 "${base_url%/}/Packages" -o "$packages_file"
-            file_url="$(
-              awk -v pkg="$package_id" -v ver="$wanted_version" '
-                BEGIN { RS=""; FS="\n"; selected = "" }
-                {
-                  package_name = architecture = version = filename = ""
-                  for (i = 1; i <= NF; i++) {
-                    if ($i ~ /^Package: /)      package_name = substr($i, 10)
-                    if ($i ~ /^Version: /)      version      = substr($i, 10)
-                    if ($i ~ /^Architecture: /) architecture = substr($i, 15)
-                    if ($i ~ /^Filename: /)     filename     = substr($i, 11)
-                  }
-                  if (package_name == pkg && version == ver && architecture == "iphoneos-arm") {
-                    selected = filename
-                  }
-                }
-                END { print selected }
-              ' "$packages_file"
-            )"
-            rm -f "$packages_file"
-
-            if [[ -z "$file_url" ]]; then
-              echo "Could not find ${package_id} ${wanted_version} in ${base_url}/Packages"; return 1
-            fi
-            [[ "$file_url" == http* ]] || file_url="${base_url%/}/${file_url#./}"
-            cache_key="$(printf "%s|%s" "$file_url" "$wanted_version" | shasum -a 256 | awk '{print substr($1,1,12)}')"
-            cached="$(find "$CACHE_DIR" -maxdepth 1 -name "${cache_name}_${wanted_version}_repo_${cache_key}.deb" -print -quit 2>/dev/null || true)"
-            target="$READY_DIR/$output_name"
-
-            if [[ -n "$cached" ]]; then
-              echo "  pinned repo cache hit $cache_name $wanted_version ($cache_key)"
-              cp "$cached" "$target"
-            else
-              echo "  pinned repo cache miss $cache_name $wanted_version ($cache_key), downloading"
-              curl -fL --retry 5 "$file_url" -o "$target"
-              rm -f "$CACHE_DIR/${cache_name}_"*_repo_*.deb
-              cp "$target" "$CACHE_DIR/${cache_name}_${wanted_version}_repo_${cache_key}.deb"
-              touch "$SHA_STORE/CACHE_UPDATED"
-            fi
-          }
-
-          echo "Copy local patched debs"
-          for deb in "$CACHE_DIR"/*.deb; do
-            [[ -f "$deb" ]] || continue
-            fname="$(basename "$deb" .deb)"
-            sha_part="${fname##*_}"
-            # Skip auto-managed debs (built from source or downloaded from repo)
-            if [[ "$fname" == *_repo_* || "$fname" == *_direct_* \
-                  || "$sha_part" =~ ^[0-9a-fA-F]{8}$  \
-                  || "$sha_part" =~ ^[0-9a-fA-F]{12}$ \
-                  || "$sha_part" =~ ^[0-9a-fA-F]{40}$ ]]; then
-              continue
-            fi
-            # YouGroupSettings is always supplied by cache_repo_deb_version below;
-            # skip any copy here to prevent duplicates.
-            if [[ "$(basename "$deb")" == *YouGroupSettings* ]]; then
-              echo "  skip (managed by repo): $(basename "$deb")"
-              continue
-            fi
-            cp "$deb" "$READY_DIR/"
-            echo "  copied $(basename "$deb")"
-          done
-
-          echo "Prepare pinned YouGroupSettings dependency"
-          cache_repo_deb_version "https://repo.chariz.com" "com.ps.yougroupsettings" \
-            "1.0.7" "YouGroupSettings" "YouGroupSettings_1.0.7.deb"
-
-          if [[ "${{ github.event.inputs.enable_ytabc }}" == "true" ]]; then
-            echo "Prepare official YTABConfig deb"
-            cache_repo_deb "https://poomsmart.github.io/repo" "com.ps.ytabconfig" \
-              "YTABConfig" "YTABConfig_official.deb"
-            if [[ "${{ github.event.inputs.enable_ytabc_reset }}" == "true" ]]; then
-              echo "Prepare YTABConfigReset deb"
-              cache_repo_deb "https://poomsmart.github.io/repo" "com.ps.ytabconfigreset" \
-                "YTABConfigReset" "YTABConfigReset_official.deb"
-            fi
+      - name: Install cyan
+        run: |
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          if [[ ! -x "$HOME/.local/bin/cyan" ]]; then
+            echo "cyan 바이너리 없음 → 설치"
+            pipx install https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
+          else
+            echo "✅ cyan 캐시 복원 확인: $HOME/.local/bin/cyan"
           fi
 
-          echo "Fetch latest SHAs"
-          SHA_PIDS=("")
-          for repo in "${REPOS[@]}"; do
-            NAME="${repo%%|*}"; rest="${repo#*|}"; URL="${rest%%|*}"; ENABLED="${rest#*|}"
-            [[ "$ENABLED" == "true" ]] || continue
-            REPO_PATH="$(echo "$URL" | sed 's|https://github.com/||;s|\.git$||')"
-            (
-              YTUHD_REF="${{ github.event.inputs.ytuhd_ref }}"
-              if [[ "$NAME" == "YTUHD" && -n "$YTUHD_REF" && "$YTUHD_REF" != "master" ]]; then
-                SHA="$(curl -sf -H "Authorization: Bearer $GH_TOKEN" \
-                  "https://api.github.com/repos/$REPO_PATH/commits/$YTUHD_REF" \
-                  | python3 -c "import sys,json; print(json.load(sys.stdin)['sha'][:8])" 2>/dev/null || echo unknown)"
-              else
-                SHA="$(curl -sf -H "Authorization: Bearer $GH_TOKEN" \
-                  "https://api.github.com/repos/$REPO_PATH/commits?per_page=1" \
-                  | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['sha'][:8])" 2>/dev/null || echo unknown)"
-              fi
-              echo "$SHA" > "$SHA_STORE/${NAME}.sha"
-            ) &
-            SHA_PIDS+=("$!")
-          done
-          for pid in "${SHA_PIDS[@]}"; do [[ -n "$pid" ]] || continue; wait "$pid" || true; done
-
-          echo "Resolve cache and clone misses"
-          CLONE_PIDS=(""); CLONE_LIST=("")
-          for repo in "${REPOS[@]}"; do
-            NAME="${repo%%|*}"; rest="${repo#*|}"; URL="${rest%%|*}"; ENABLED="${rest#*|}"
-            if [[ "$ENABLED" != "true" ]]; then echo "  skip $NAME"; continue; fi
-
-            LATEST_SHA="$(cat "$SHA_STORE/${NAME}.sha" 2>/dev/null || echo unknown)"
-
-            if echo "$HEADER_ONLY" | grep -qw "$NAME"; then
-              CACHED="$(find "$CACHE_DIR" -maxdepth 1 -name "${NAME}_${LATEST_SHA}.tar" -print -quit 2>/dev/null || true)"
-              if [[ -n "$CACHED" && "$LATEST_SHA" != "unknown" ]]; then
-                echo "  header cache hit $NAME ($LATEST_SHA)"
-                mkdir -p "$BUILD_DIR/$NAME"
-                tar -xf "$CACHED" -C "$BUILD_DIR/$NAME"
-              else
-                echo "  clone header $NAME ($LATEST_SHA)"
-                git clone --quiet --depth 1 --recurse-submodules "$URL" "$BUILD_DIR/$NAME" &
-                CLONE_PIDS+=("$!"); CLONE_LIST+=("$NAME")
-              fi
-            else
-              CACHED="$(find "$CACHE_DIR" -maxdepth 1 -name "${NAME}_${LATEST_SHA}.deb" -print -quit 2>/dev/null || true)"
-              if [[ -n "$CACHED" && "$LATEST_SHA" != "unknown" ]]; then
-                echo "  deb cache hit $NAME ($LATEST_SHA)"
-                cp "$CACHED" "$READY_DIR/"
-                # YTVideoOverlay needs its source for header imports even on cache hit
-                if [[ "$NAME" == "YTVideoOverlay" ]]; then
-                  echo "  clone YTVideoOverlay source for header imports (deb cache hit)"
-                  git clone --quiet --depth 1 "$URL" "$BUILD_DIR/$NAME" &
-                  CLONE_PIDS+=("$!")
-                fi
-              else
-                echo "  clone $NAME ($LATEST_SHA)"
-                YTUHD_REF="${{ github.event.inputs.ytuhd_ref }}"
-                if [[ "$NAME" == "YTUHD" && -n "$YTUHD_REF" && "$YTUHD_REF" != "master" ]]; then
-                  git clone --quiet --depth 1 --branch "$YTUHD_REF" \
-                    --recurse-submodules "$URL" "$BUILD_DIR/$NAME" &
-                else
-                  git clone --quiet --depth 1 --recurse-submodules "$URL" "$BUILD_DIR/$NAME" &
-                fi
-                CLONE_PIDS+=("$!"); CLONE_LIST+=("$NAME")
-              fi
-            fi
-          done
-          for pid in "${CLONE_PIDS[@]}"; do [[ -n "$pid" ]] || continue; wait "$pid" || true; done
-
-          if [[ -d "$BUILD_DIR/YouTubeHeader" ]]; then
-            mkdir -p "$THEOS/include/YouTubeHeader"
-            rsync -a --exclude='.git' "$BUILD_DIR/YouTubeHeader/" "$THEOS/include/YouTubeHeader/"
-            rsync -a --exclude='.git' "$BUILD_DIR/YouTubeHeader/" "$THEOS/include/"
-          fi
-          if [[ -d "$BUILD_DIR/PSHeader" ]]; then
-            rm -rf "$BUILD_DIR/PSHeader/CoreImage"
-            mkdir -p "$THEOS/include/PSHeader"
-            rsync -a --exclude='.git' "$BUILD_DIR/PSHeader/" "$THEOS/include/PSHeader/"
-            rsync -a --exclude='.git' "$BUILD_DIR/PSHeader/" "$THEOS/include/"
-          fi
-
-          if [[ -d "$BUILD_DIR/DontEatMyContent" ]]; then
-            sed -i '' "s/^CGFloat constant;/extern CGFloat constant;/" \
-              "$BUILD_DIR/DontEatMyContent/Tweak.h" 2>/dev/null || true
-            perl -0pi -e 's/#import "Tweak\.h"\n/#import "Tweak.h"\nCGFloat constant = 0;\n/' \
-              "$BUILD_DIR/DontEatMyContent/Tweak.x" 2>/dev/null || true
-          fi
-
-          export DEBUG=0 FINALPACKAGE=1 SIDELOAD=1 SDKVERSION=16.5
-          BUILD_PIDS=("")
-          for NAME in "${CLONE_LIST[@]}"; do
-            [[ -n "$NAME" ]] || continue
-            DIR="$BUILD_DIR/$NAME"
-            SHA="$(cat "$SHA_STORE/${NAME}.sha" 2>/dev/null || echo unknown)"
-
-            if echo "$HEADER_ONLY" | grep -qw "$NAME"; then
-              if [[ -d "$DIR" && "$SHA" != "unknown" ]]; then
-                rm -f "$CACHE_DIR/${NAME}_"*.tar
-                tar -cf "$CACHE_DIR/${NAME}_${SHA}.tar" -C "$DIR" --exclude='.git' .
-                touch "$SHA_STORE/CACHE_UPDATED"
-              fi
-              continue
-            fi
-
-            [[ -d "$DIR" ]] || continue
-            (
-              if [[ "$NAME" == "YTUHD" ]]; then
-                if [[ -d "$DIR/vendor/libvpx" && ! -f "$DIR/vendor/libvpx_ios/libvpx.a" ]]; then
-                  echo "  building YTUHD libvpx..."
-                  pushd "$DIR/vendor/libvpx" >/dev/null
-                  make distclean >/dev/null 2>&1 || true
-                  ./configure --target=arm64-darwin-gcc \
-                    --disable-examples --disable-tools --disable-docs \
-                    --disable-unit-tests --disable-webm-io \
-                    --enable-vp9-decoder --enable-pic > /tmp/build_YTUHD_libvpx.log 2>&1
-                  make -j"$(sysctl -n hw.ncpu)" libvpx.a >> /tmp/build_YTUHD_libvpx.log 2>&1
-                  mkdir -p "$DIR/vendor/libvpx_ios"
-                  cp libvpx.a "$DIR/vendor/libvpx_ios/libvpx.a"
-                  popd >/dev/null
-                fi
-
-                if [[ -d "$DIR/vendor/dav1d" && ! -f "$DIR/vendor/dav1d_ios/libdav1d.a" ]]; then
-                  echo "  building YTUHD dav1d..."
-                  SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
-                  CLANG_PATH="$(xcrun --sdk iphoneos --find clang)"
-                  AR_PATH="$(xcrun --sdk iphoneos --find ar)"
-                  STRIP_PATH="$(xcrun --sdk iphoneos --find strip)"
-                  CROSS_FILE="$DIR/vendor/dav1d/ios-arm64-cross.txt"
-                  {
-                    echo "[binaries]"
-                    echo "c = '$CLANG_PATH'"
-                    echo "ar = '$AR_PATH'"
-                    echo "strip = '$STRIP_PATH'"
-                    echo ""
-                    echo "[host_machine]"
-                    echo "system = 'darwin'"
-                    echo "cpu_family = 'aarch64'"
-                    echo "cpu = 'arm64'"
-                    echo "endian = 'little'"
-                    echo ""
-                    echo "[built-in options]"
-                    echo "c_args = ['-arch', 'arm64', '-isysroot', '$SDK_PATH', '-miphoneos-version-min=11.0']"
-                    echo "c_link_args = ['-arch', 'arm64', '-isysroot', '$SDK_PATH', '-miphoneos-version-min=11.0']"
-                  } > "$CROSS_FILE"
-
-                  rm -rf "$DIR/vendor/dav1d/build-ios"
-                  meson setup "$DIR/vendor/dav1d/build-ios" "$DIR/vendor/dav1d" \
-                    --cross-file "$CROSS_FILE" \
-                    --default-library static \
-                    -Denable_tools=false \
-                    -Denable_tests=false \
-                    -Denable_examples=false \
-                    -Denable_docs=false \
-                    -Denable_asm=false > /tmp/build_YTUHD_dav1d.log 2>&1
-                  ninja -C "$DIR/vendor/dav1d/build-ios" >> /tmp/build_YTUHD_dav1d.log 2>&1
-                  mkdir -p "$DIR/vendor/dav1d_ios"
-                  DAV1D_LIB="$(find "$DIR/vendor/dav1d/build-ios" -name "libdav1d.a" -print -quit)"
-                  if [[ -z "$DAV1D_LIB" ]]; then
-                    echo "  dav1d build did not produce libdav1d.a"
-                    tail -80 /tmp/build_YTUHD_dav1d.log || true
-                    exit 1
-                  fi
-                  cp "$DAV1D_LIB" "$DIR/vendor/dav1d_ios/libdav1d.a"
-                fi
-              fi
-
-              pushd "$DIR" >/dev/null
-              if [[ -f Makefile ]]; then
-                make clean >/dev/null 2>&1 || true
-                if make -j"$(sysctl -n hw.ncpu)" package >"/tmp/build_${NAME}.log" 2>&1; then
-                  for deb in packages/*.deb; do
-                    [[ -f "$deb" ]] || continue
-                    cp "$deb" "$READY_DIR/"
-                    if [[ "$SHA" != "unknown" ]]; then
-                      rm -f "$CACHE_DIR/${NAME}_"*.deb
-                      cp "$deb" "$CACHE_DIR/${NAME}_${SHA}.deb"
-                      touch "$SHA_STORE/CACHE_UPDATED"
-                    fi
-                  done
-                  echo "  built $NAME"
-                else
-                  echo "  build failed $NAME"
-                  tail -40 "/tmp/build_${NAME}.log"
-                  exit 1
-                fi
-              fi
-              popd >/dev/null
-            ) &
-            BUILD_PIDS+=("$!")
-          done
-          for pid in "${BUILD_PIDS[@]}"; do [[ -n "$pid" ]] || continue; wait "$pid"; done
-
-          [[ -f "$SHA_STORE/CACHE_UPDATED" ]] && CACHE_UPDATED=true
-          echo "CACHE_UPDATED=$CACHE_UPDATED" >> "$GITHUB_ENV"
-
-          # ── validation ────────────────────────────────────────────────────
-          echo "Ready debs"
-          ls -lh "$READY_DIR/"
-          DEB_COUNT="$(find "$READY_DIR" -name "*.deb" | wc -l | tr -d ' ')"
-          if [[ "$DEB_COUNT" -eq 0 ]]; then
-          echo "No deb files to inject"; exit 1
-          fi
-          YGS_COUNT="$(find "$READY_DIR" -name "*YouGroupSettings*.deb" | wc -l | tr -d ' ')"
-          if [[ "$YGS_COUNT" -ne 1 ]]; then
-          echo "Expected exactly one YouGroupSettings deb, found $YGS_COUNT"
-          find "$READY_DIR" -name "*YouGroupSettings*.deb" -print
-          exit 1
-          fi
-          if [[ "${{ github.event.inputs.enable_ytabc_reset }}" != "true" ]]; then
-          RESET_COUNT="$(find "$READY_DIR" -name "*YTABConfigReset*.deb" | wc -l | tr -d ' ')"
-          if [[ "$RESET_COUNT" -ne 0 ]]; then
-            echo "YTABConfigReset is disabled but still present in ready packages"
-            find "$READY_DIR" -name "*YTABConfigReset*.deb" -print
+      # ── 7. IPA + YTLite deb 병렬 다운로드 ─────────────────
+      - name: Download decrypted YouTube IPA + YTPlus deb
+        run: |
+          wget "${{ github.event.inputs.decrypted_ipa_url }}" --no-verbose -O youtube.ipa
+          echo "✅ IPA 다운로드 완료"
+          YTPLUS_DEB="${{ github.workspace }}/${{ env.DEB_CACHE_DIR }}/ytplus.deb"
+          if [[ ! -f "$YTPLUS_DEB" ]]; then
+            echo "❌ tweaks/prebuilt/ytplus.deb 파일이 없습니다."
             exit 1
           fi
+          cp "$YTPLUS_DEB" "${{ github.workspace }}/ytplus.deb"
+          echo "✅ ytplus.deb 복사 완료"
+
+      # ══════════════════════════════════════════════════════
+      # [모드 A] 저장소 캐시 deb 복사 (update_tweaks = false)
+      # 저장소의 tweaks/prebuilt/ 안에 있는 deb를 작업 디렉터리로 복사
+      # ══════════════════════════════════════════════════════
+      - name: Use cached debs from repository
+        if: ${{ !inputs.update_tweaks }}
+        run: |
+          CACHE_DIR="${{ github.workspace }}/${{ env.DEB_CACHE_DIR }}"
+          if [[ ! -d "$CACHE_DIR" ]]; then
+            echo "❌ $CACHE_DIR 폴더가 없습니다."
+            echo "   처음 사용 시 'Check for tweak updates' 옵션을 켜고 한 번 실행해 deb를 생성하세요."
+            exit 1
           fi
-          if [[ "${{ github.event.inputs.enable_ytuhd }}" == "true" ]] && \
-           ! find "$READY_DIR" \( -name "YTUHD*.deb" -o -name "com.ps.ytuhd*.deb" -o -name "dev.water888.ytuhd*.deb" \) \
-               -print -quit | grep -q .; then
-          echo "YTUHD is enabled but no YTUHD deb is ready"
-          exit 1
+          echo "📦 저장소 캐시 deb 복사 중..."
+          for deb in "$CACHE_DIR"/*.deb; do
+            [[ -e "$deb" ]] && cp "$deb" "${{ github.workspace }}/" && echo "  ✅ $(basename $deb)"
+          done
+          echo "✅ 저장소 캐시 deb 복사 완료"
+
+      # ══════════════════════════════════════════════════════
+      # [모드 B] 트윅 최신 소스 클론+빌드 (update_tweaks = true)
+      # 빌드 후 tweaks/prebuilt/ 에 커밋하여 저장소에 보관
+      # ══════════════════════════════════════════════════════
+
+      # ── 공통 헤더 캐시 + 클론 (update_tweaks 시에만) ───────
+      - name: Cache shared headers
+        id: cache-headers
+        if: ${{ inputs.update_tweaks }}
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/theos/include/YouTubeHeader
+          key: headers-${{ steps.sha.outputs.headers }}-${{ steps.sha.outputs.psheader }}
+
+      - name: Clone shared headers
+        if: ${{ inputs.update_tweaks && steps.cache-headers.outputs.cache-hit != 'true' }}
+        run: |
+          THEOS=${{ github.workspace }}/theos
+          cd $THEOS/include
+          rm -rf YouTubeHeader PSHeader
+          git clone --quiet --depth=1 https://github.com/PoomSmart/YouTubeHeader.git
+          git clone --quiet --depth=1 https://github.com/PoomSmart/PSHeader.git
+
+      - name: Setup YTHeaders (DontEatMyContent)
+        if: ${{ inputs.update_tweaks && inputs.enable_demc }}
+        run: |
+          THEOS=${{ github.workspace }}/theos
+          cd $THEOS/include
+          rm -rf YTHeaders
+          cp -r YouTubeHeader YTHeaders
+
+      # ── YouGroupSettings ───────────────────────────────────
+      - name: Cache YouGroupSettings deb
+        id: cache-ygs
+        if: ${{ inputs.update_tweaks && (inputs.enable_youpip || inputs.enable_ytuhd || inputs.enable_yq || inputs.enable_ycq || inputs.enable_ryd || inputs.enable_demc || inputs.enable_youloop || inputs.enable_youspeed) }}
+        uses: actions/cache@v4
+        with:
+          path: ygs.deb
+          key: deb-ygs-${{ steps.sha.outputs.ygs }}
+
+      - name: Clone + Build YouGroupSettings
+        if: ${{ inputs.update_tweaks && (inputs.enable_youpip || inputs.enable_ytuhd || inputs.enable_yq || inputs.enable_ycq || inputs.enable_ryd || inputs.enable_demc || inputs.enable_youloop || inputs.enable_youspeed) && steps.cache-ygs.outputs.cache-hit != 'true' }}
+        run: |
+          export THEOS=${{ github.workspace }}/theos
+          git clone --quiet --depth=1 https://github.com/PoomSmart/YouGroupSettings.git
+          cd YouGroupSettings && make package DEBUG=0 FINALPACKAGE=1
+          mv packages/*.deb ../ygs.deb
+
+      # ── YTVideoOverlay ─────────────────────────────────────
+      - name: Cache YTVideoOverlay deb
+        id: cache-ytvo
+        if: ${{ inputs.update_tweaks && (inputs.enable_youpip || inputs.enable_ytuhd || inputs.enable_yq || inputs.enable_ycq || inputs.enable_youloop || inputs.enable_youspeed) }}
+        uses: actions/cache@v4
+        with:
+          path: ytvo.deb
+          key: deb-ytvo-${{ steps.sha.outputs.ytvo }}
+
+      - name: Clone + Build YTVideoOverlay
+        if: ${{ inputs.update_tweaks && (inputs.enable_youpip || inputs.enable_ytuhd || inputs.enable_yq || inputs.enable_ycq || inputs.enable_youloop || inputs.enable_youspeed) && steps.cache-ytvo.outputs.cache-hit != 'true' }}
+        run: |
+          export THEOS=${{ github.workspace }}/theos
+          git clone --quiet --depth=1 https://github.com/PoomSmart/YTVideoOverlay.git
+          cd YTVideoOverlay && make package DEBUG=0 FINALPACKAGE=1
+          mv packages/*.deb ../ytvo.deb
+
+      - name: Ensure YTVideoOverlay source (header guard)
+        if: ${{ inputs.update_tweaks && (inputs.enable_youpip || inputs.enable_ytuhd || inputs.enable_yq || inputs.enable_ycq || inputs.enable_youloop || inputs.enable_youspeed) }}
+        run: |
+          if [[ ! -d YTVideoOverlay ]]; then
+            echo "YTVideoOverlay 소스 없음 (캐시 히트) → 헤더용으로 클론"
+            git clone --quiet --depth=1 https://github.com/PoomSmart/YTVideoOverlay.git
+          else
+            echo "✅ YTVideoOverlay 소스 이미 존재"
           fi
 
-      - name: Commit Updated Tweak Cache
-        if: env.CACHE_UPDATED == 'true'
-        shell: bash
+      # ── YouPiP ─────────────────────────────────────────────
+      - name: Cache YouPiP deb
+        id: cache-youpip
+        if: ${{ inputs.update_tweaks && inputs.enable_youpip }}
+        uses: actions/cache@v4
+        with:
+          path: youpip.deb
+          key: deb-youpip-${{ steps.sha.outputs.youpip }}
+
+      - name: Clone + Build YouPiP
+        if: ${{ inputs.update_tweaks && inputs.enable_youpip && steps.cache-youpip.outputs.cache-hit != 'true' }}
         run: |
-          set -euo pipefail
+          export THEOS=${{ github.workspace }}/theos
+          git clone --quiet --depth=1 https://github.com/PoomSmart/YouPiP.git
+          cd YouPiP && make package DEBUG=0 FINALPACKAGE=1
+          mv packages/*.deb ../youpip.deb
+
+      # ── YTUHD ──────────────────────────────────────────────
+      - name: Cache YTUHD deb
+        id: cache-ytuhd
+        if: ${{ inputs.update_tweaks && inputs.enable_ytuhd }}
+        uses: actions/cache@v4
+        with:
+          path: ytuhd.deb
+          key: deb-ytuhd-${{ steps.sha.outputs.ytuhd }}
+
+      - name: Clone + Build YTUHD
+        if: ${{ inputs.update_tweaks && inputs.enable_ytuhd && steps.cache-ytuhd.outputs.cache-hit != 'true' }}
+        run: |
+          export THEOS=${{ github.workspace }}/theos
+          git clone --quiet --depth=1 https://github.com/Tonwalter888/YTUHD.git
+
+          # ── YTUHD 빌드 (서브모듈 없음, libvpx/dav1d 불필요) ─
+          cd YTUHD
+          make package DEBUG=0 FINALPACKAGE=1
+          mv packages/*.deb ../ytuhd.deb
+
+      # ── YouQuality ─────────────────────────────────────────
+      - name: Cache YouQuality deb
+        id: cache-yq
+        if: ${{ inputs.update_tweaks && inputs.enable_yq }}
+        uses: actions/cache@v4
+        with:
+          path: yq.deb
+          key: deb-yq-${{ steps.sha.outputs.yq }}
+
+      - name: Clone + Build YouQuality
+        if: ${{ inputs.update_tweaks && inputs.enable_yq && steps.cache-yq.outputs.cache-hit != 'true' }}
+        run: |
+          export THEOS=${{ github.workspace }}/theos
+          git clone --quiet --depth=1 https://github.com/PoomSmart/YouQuality.git
+          cd YouQuality && make package DEBUG=0 FINALPACKAGE=1
+          mv packages/*.deb ../yq.deb
+
+      # ── YouChooseQuality ───────────────────────────────────
+      - name: Cache YouChooseQuality deb
+        id: cache-ycq
+        if: ${{ inputs.update_tweaks && inputs.enable_ycq }}
+        uses: actions/cache@v4
+        with:
+          path: ycq.deb
+          key: deb-ycq-${{ steps.sha.outputs.ycq }}
+
+      - name: Clone + Build YouChooseQuality
+        if: ${{ inputs.update_tweaks && inputs.enable_ycq && steps.cache-ycq.outputs.cache-hit != 'true' }}
+        run: |
+          export THEOS=${{ github.workspace }}/theos
+          git clone --quiet --depth=1 https://github.com/PoomSmart/YouChooseQuality.git
+          YCQ_BUNDLE=$(find YouChooseQuality/layout -type d -name "*.bundle" 2>/dev/null | head -1)
+          if [[ -n "$YCQ_BUNDLE" ]]; then
+            mkdir -p "$YCQ_BUNDLE/ko.lproj"
+            printf '%s\n' \
+              '"TWEAK_NAME" = "YouChooseQuality";' \
+              '"TWEAK_DESC" = "각 상황별로 지정한 화질과 동일하거나 가장 가까운 화질을 자동으로 선택합니다.";' \
+              '"ENABLED" = "활성화";' \
+              '"QUALITY_FOR_SCENARIO_0_SHORT" = "Wi-Fi";' \
+              '"QUALITY_FOR_SCENARIO_0" = "Wi-Fi 연결 시 기본 화질";' \
+              '"QUALITY_FOR_SCENARIO_1_SHORT" = "셀룰러";' \
+              '"QUALITY_FOR_SCENARIO_1" = "셀룰러(모바일 데이터) 연결 시 기본 화질";' \
+              '"QUALITY_FOR_SCENARIO_2_SHORT" = "Wi-Fi (AirPlay)";' \
+              '"QUALITY_FOR_SCENARIO_2" = "AirPlay 사용 중 Wi-Fi 연결 시 기본 화질";' \
+              '"QUALITY_FOR_SCENARIO_3_SHORT" = "셀룰러 (AirPlay)";' \
+              '"QUALITY_FOR_SCENARIO_3" = "AirPlay 사용 중 셀룰러 연결 시 기본 화질";' \
+              '"QUALITY_FOR_SCENARIO_4_SHORT" = "저전력 모드";' \
+              '"QUALITY_FOR_SCENARIO_4" = "저전력 모드 활성화 시 기본 화질";' \
+              > "$YCQ_BUNDLE/ko.lproj/Localizable.strings"
+          fi
+          cd YouChooseQuality && make package DEBUG=0 FINALPACKAGE=1
+          mv packages/*.deb ../ycq.deb
+
+      # ── Return-YouTube-Dislikes ────────────────────────────
+      - name: Cache Return-YouTube-Dislikes deb
+        id: cache-ryd
+        if: ${{ inputs.update_tweaks && inputs.enable_ryd }}
+        uses: actions/cache@v4
+        with:
+          path: ryd.deb
+          key: deb-ryd-${{ steps.sha.outputs.ryd }}
+
+      - name: Clone + Build Return-YouTube-Dislikes
+        if: ${{ inputs.update_tweaks && inputs.enable_ryd && steps.cache-ryd.outputs.cache-hit != 'true' }}
+        run: |
+          export THEOS=${{ github.workspace }}/theos
+          git clone --quiet --depth=1 https://github.com/PoomSmart/Return-YouTube-Dislikes.git
+          cd Return-YouTube-Dislikes && make package DEBUG=0 FINALPACKAGE=1
+          mv packages/*.deb ../ryd.deb
+
+      # ── YTABConfig ─────────────────────────────────────────
+      - name: Cache YTABConfig deb
+        id: cache-ytabc
+        if: ${{ inputs.update_tweaks && inputs.enable_ytabc }}
+        uses: actions/cache@v4
+        with:
+          path: ytabc.deb
+          key: deb-ytabc-${{ steps.sha.outputs.ytabc }}
+
+      - name: Clone + Build YTABConfig
+        if: ${{ inputs.update_tweaks && inputs.enable_ytabc && steps.cache-ytabc.outputs.cache-hit != 'true' }}
+        run: |
+          export THEOS=${{ github.workspace }}/theos
+          git clone --quiet --depth=1 https://github.com/PoomSmart/YTABConfig.git
+          cd YTABConfig && make package DEBUG=0 FINALPACKAGE=1
+          mv packages/*.deb ../ytabc.deb
+
+      # ── DontEatMyContent ───────────────────────────────────
+      - name: Cache DontEatMyContent deb
+        id: cache-demc
+        if: ${{ inputs.update_tweaks && inputs.enable_demc }}
+        uses: actions/cache@v4
+        with:
+          path: demc.deb
+          key: deb-demc-${{ steps.sha.outputs.demc }}
+
+      - name: Clone + Build DontEatMyContent
+        if: ${{ inputs.update_tweaks && inputs.enable_demc && steps.cache-demc.outputs.cache-hit != 'true' }}
+        run: |
+          export THEOS=${{ github.workspace }}/theos
+          git clone --quiet --depth=1 https://github.com/therealFoxster/DontEatMyContent.git
+          sed -i '' "s/^CGFloat constant;/extern CGFloat constant;/" DontEatMyContent/Tweak.h
+          perl -i -0pe 's/^(static CGFloat videoAspectRatio)/CGFloat constant = 0.0;\n$1/m' DontEatMyContent/Tweak.x
+          cd DontEatMyContent && make package DEBUG=0 FINALPACKAGE=1
+          mv packages/*.deb ../demc.deb
+
+      # ── YouLoop ────────────────────────────────────────────
+      - name: Cache YouLoop deb
+        id: cache-youloop
+        if: ${{ inputs.update_tweaks && inputs.enable_youloop }}
+        uses: actions/cache@v4
+        with:
+          path: youloop.deb
+          key: deb-youloop-${{ steps.sha.outputs.youloop }}
+
+      - name: Clone + Build YouLoop
+        if: ${{ inputs.update_tweaks && inputs.enable_youloop && steps.cache-youloop.outputs.cache-hit != 'true' }}
+        run: |
+          export THEOS=${{ github.workspace }}/theos
+          git clone --quiet --depth=1 https://github.com/bhackel/YouLoop.git
+          cd YouLoop && make package DEBUG=0 FINALPACKAGE=1
+          mv packages/*.deb ../youloop.deb
+
+      # ── YouSpeed ───────────────────────────────────────────
+      - name: Cache YouSpeed deb
+        id: cache-youspeed
+        if: ${{ inputs.update_tweaks && inputs.enable_youspeed }}
+        uses: actions/cache@v4
+        with:
+          path: youspeed.deb
+          key: deb-youspeed-${{ steps.sha.outputs.youspeed }}
+
+      - name: Clone + Build YouSpeed
+        if: ${{ inputs.update_tweaks && inputs.enable_youspeed && steps.cache-youspeed.outputs.cache-hit != 'true' }}
+        run: |
+          export THEOS=${{ github.workspace }}/theos
+          git clone --quiet --depth=1 https://github.com/PoomSmart/YouSpeed.git
+          cd YouSpeed && make package DEBUG=0 FINALPACKAGE=1
+          mv packages/*.deb ../youspeed.deb
+
+      # ── YouTube X (prebuilt) ───────────────────────────────
+      # tweaks/prebuilt/ytx.deb 를 작업 디렉터리로 복사
+      - name: Use YouTube X prebuilt deb
+        if: ${{ inputs.enable_ytx }}
+        run: |
+          YTX_PREBUILT="${{ github.workspace }}/${{ env.DEB_CACHE_DIR }}/ytx.deb"
+          if [[ ! -f "$YTX_PREBUILT" ]]; then
+            echo "❌ tweaks/prebuilt/ytx.deb 파일이 없습니다."
+            echo "   com_ps_ytx_1_7_22_iphoneos-arm.deb 를 tweaks/prebuilt/ytx.deb 로 이름 바꿔서 커밋하세요."
+            exit 1
+          fi
+          cp "$YTX_PREBUILT" "${{ github.workspace }}/ytx.deb"
+          echo "✅ YouTube X prebuilt deb 복사 완료"
+
+      # ── 빌드된 deb를 저장소에 커밋 (update_tweaks 시에만) ──
+      - name: Save updated debs to repository
+        if: ${{ inputs.update_tweaks }}
+        run: |
+          CACHE_DIR="${{ github.workspace }}/${{ env.DEB_CACHE_DIR }}"
+          mkdir -p "$CACHE_DIR"
+
+          echo "📦 새로 빌드된 deb를 저장소 캐시로 보관..."
+          UPDATED=0
+          for deb in ygs.deb ytvo.deb youpip.deb ytuhd.deb yq.deb ycq.deb \
+                     ryd.deb ytabc.deb demc.deb youloop.deb youspeed.deb; do
+            if [[ -f "${{ github.workspace }}/$deb" ]]; then
+              cp "${{ github.workspace }}/$deb" "$CACHE_DIR/$deb"
+              echo "  ✅ $deb 보관 완료"
+              UPDATED=$((UPDATED+1))
+            fi
+          done
+
+          if [[ $UPDATED -eq 0 ]]; then
+            echo "⚠️ 보관할 새 deb 없음 (모두 캐시 히트)"
+          fi
+
+          # git 설정 및 커밋
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add tweaks/
-          git diff --cached --quiet && exit 0
-          git commit -m "chore: update tweak cache [skip ci]"
-          git push
+          git add "$CACHE_DIR"
 
-      - name: Inject
-        shell: bash
+          if git diff --cached --quiet; then
+            echo "ℹ️ deb 변경 없음 → 커밋 생략"
+          else
+            BUILD_DATE=$(date -u '+%Y-%m-%d %H:%M UTC')
+            git commit -m "chore: update prebuilt tweaks [$BUILD_DATE]"
+            git push
+            echo "✅ 저장소에 최신 deb 커밋 완료"
+          fi
+
+      # ── Open in YouTube Safari extension ───────────────────
+      - name: Prepare OpenYouTubeSafariExtension
+        if: ${{ inputs.include_open_youtube }}
         run: |
-          set -euo pipefail
-          CYAN="$CYAN_BIN_DIR/cyan"
-          if [[ ! -x "$CYAN" ]]; then
-            echo "cyan not found: $CYAN"; exit 1
+          APPEX_ZIP="${{ github.workspace }}/${{ env.DEB_CACHE_DIR }}/OpenYouTubeSafariExtension.appex.zip"
+          if [[ ! -f "$APPEX_ZIP" ]]; then
+            echo "❌ $APPEX_ZIP 파일이 없습니다."
+            echo "   tweaks/prebuilt/ 에 OpenYouTubeSafariExtension.appex.zip 을 추가하세요."
+            exit 1
           fi
+          echo "📦 OpenYouTubeSafariExtension.appex.zip 압축 해제 중..."
+          unzip -o "$APPEX_ZIP" -d "${{ github.workspace }}/"
+          echo "✅ OpenYouTubeSafariExtension.appex 준비 완료"
 
-          ALL_DEBS_FILE="$(mktemp)"
-          find "${{ github.workspace }}/ready_packages" \( -name "*.deb" -o -name "*.appex" \) | sort > "$ALL_DEBS_FILE"
-
-          # Build injection order: priority packages first, then the rest
-          DEBS=("")
-          for pattern in "libundirect" "YouGroupSettings" "YTVideoOverlay" "YTABConfig" "YTABConfigReset"; do
-            while IFS= read -r deb; do
-              [[ -n "$deb" ]] || continue
-              DEBS+=("$deb")
-            done < <(grep "/.*${pattern}.*\.deb$" "$ALL_DEBS_FILE" || true)
+      # ── IPA 인젝션 ─────────────────────────────────────────
+      - name: Inject tweaks into IPA
+        run: |
+          tweaks="ytplus.deb"
+          for f in *.deb *.appex; do
+            [[ -e "$f" ]] && [[ "$f" != "ytplus.deb" ]] && tweaks="$tweaks $f"
           done
-          while IFS= read -r deb; do
-            [[ -n "$deb" ]] || continue
-            case "$(basename "$deb")" in
-              *libundirect*.deb|*YouGroupSettings*.deb|*YTVideoOverlay*.deb|\
-              *YTABConfig*.deb|*YTABConfigReset*.deb) continue ;;
-            esac
-            DEBS+=("$deb")
-          done < "$ALL_DEBS_FILE"
-          rm -f "$ALL_DEBS_FILE"
+          echo "인젝션할 트윅: $tweaks"
+          cyan -i youtube.ipa \
+               -o "${{ steps.version.outputs.ipa_name }}" \
+               -uwef $tweaks \
+               -n "${{ github.event.inputs.app_name }}" \
+               -b "${{ github.event.inputs.bundle_id }}"
 
-          DEBS=("${DEBS[@]:1}")
-          if [[ ${#DEBS[@]} -eq 0 ]]; then
-            echo "No deb files found for injection"; exit 1
-          fi
-          printf "Injecting debs:\n"
-          printf "  %s\n" "${DEBS[@]}"
+      # ── 패트리온 패치 ──────────────────────────────────────
+      - name: Apply no-patreon patch
+        run: |
+          IPA="${{ steps.version.outputs.ipa_name }}"
+          echo "🔧 패트리온 제거 패치 적용 중..."
+          cd YTplus_patch
+          python3 patch_ytlite_package_no_patreon_52x.py "../$IPA"
+          mv "../${IPA%.ipa}-no-patreon.ipa" "../$IPA"
+          echo "✅ 패치 완료"
 
-          "$CYAN" \
-            -i ./youtube.ipa \
-            -o "${{ steps.meta.outputs.ipa_name }}" \
-            -f "${DEBS[@]}" \
-            -e \
-            -n "${{ github.event.inputs.app_name }}" \
-            -b "${{ github.event.inputs.bundle_id }}"
-
-          test -s "${{ steps.meta.outputs.ipa_name }}"
-          echo "IPA complete: ${{ steps.meta.outputs.ipa_name }}"
-
-      - name: Upload to Release
+      # ── GitHub Release 업로드 ──────────────────────────────
+      - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.meta.outputs.tag }}
-          name:     ${{ steps.meta.outputs.release_name }}
-          body:     ${{ steps.meta.outputs.release_notes }}
-          files:    ${{ steps.meta.outputs.ipa_name }}
-          overwrite_files: true
-          make_latest: true
-          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name:  ${{ steps.version.outputs.release_tag }}
+          name:      ${{ steps.version.outputs.release_tag }}
+          body:      ${{ steps.version.outputs.release_notes }}
+          files:     ${{ steps.version.outputs.ipa_name }}
+          fail_on_unmatched_files: true
