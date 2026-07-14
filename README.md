@@ -18,8 +18,8 @@ iOS용 YouTube 강화 트윅으로, 100가지 이상의 커스터마이징 옵�
 
 ## 지원 YouTube 버전
 <ul>
-   <li><strong>최근 확인된 버전:</strong> <em>21.22.4</em></li>
-   <li><strong>테스트 날짜:</strong> <em>2026년 5월 30일</em></li>
+   <li><strong>최근 확인된 버전:</strong> <em>21.28.3</em></li>
+   <li><strong>테스트 날짜:</strong> <em>2026년 7월 15일</em></li>
    <li><strong>YouTube Plus 버전:</strong> <em>5.2.1</em></li>
 </ul>
 
