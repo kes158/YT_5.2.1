@@ -89,12 +89,6 @@ on:
         default: true
         type: boolean
 
-      enable_ytx:
-        description: 'YouTube X'
-        required: false
-        default: true
-        type: boolean
-
       include_open_youtube:
         description: 'Open in YouTube Safari extension'
         required: false
@@ -149,7 +143,6 @@ jobs:
           [[ "${{ github.event.inputs.enable_ytuhd }}"         == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYTUHD"
           [[ "${{ github.event.inputs.enable_youloop }}"       == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYouLoop"
           [[ "${{ github.event.inputs.enable_youspeed }}"      == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYouSpeed"
-          [[ "${{ github.event.inputs.enable_ytx }}"           == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYouTube X"
           [[ "${{ github.event.inputs.include_open_youtube }}" == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nOpenYouTubeSafariExtension"
 
           {
@@ -287,9 +280,9 @@ jobs:
         run: |
           wget "${{ github.event.inputs.decrypted_ipa_url }}" --no-verbose -O youtube.ipa
           echo "✅ IPA 다운로드 완료"
-          YTPLUS_DEB="${{ github.workspace }}/${{ env.DEB_CACHE_DIR }}/ytplus.deb"
+          YTPLUS_DEB="${{ github.workspace }}/${{ env.DEB_CACHE_DIR }}/com.dvntm.ytlite_5.2.1_iphoneos-arm_patch_zarzel.deb"
           if [[ ! -f "$YTPLUS_DEB" ]]; then
-            echo "❌ tweaks/prebuilt/ytplus.deb 파일이 없습니다."
+            echo "❌ tweaks/prebuilt/com.dvntm.ytlite_5.2.1_iphoneos-arm_patch_zarzel.deb 파일이 없습니다."
             exit 1
           fi
           cp "$YTPLUS_DEB" "${{ github.workspace }}/ytplus.deb"
@@ -565,20 +558,6 @@ jobs:
           git clone --quiet --depth=1 https://github.com/PoomSmart/YouSpeed.git
           cd YouSpeed && make package DEBUG=0 FINALPACKAGE=1
           mv packages/*.deb ../youspeed.deb
-
-      # ── YouTube X (prebuilt) ───────────────────────────────
-      # tweaks/prebuilt/ytx.deb 를 작업 디렉터리로 복사
-      - name: Use YouTube X prebuilt deb
-        if: ${{ inputs.enable_ytx }}
-        run: |
-          YTX_PREBUILT="${{ github.workspace }}/${{ env.DEB_CACHE_DIR }}/ytx.deb"
-          if [[ ! -f "$YTX_PREBUILT" ]]; then
-            echo "❌ tweaks/prebuilt/ytx.deb 파일이 없습니다."
-            echo "   com_ps_ytx_1_7_22_iphoneos-arm.deb 를 tweaks/prebuilt/ytx.deb 로 이름 바꿔서 커밋하세요."
-            exit 1
-          fi
-          cp "$YTX_PREBUILT" "${{ github.workspace }}/ytx.deb"
-          echo "✅ YouTube X prebuilt deb 복사 완료"
 
       # ── 빌드된 deb를 저장소에 커밋 (update_tweaks 시에만) ──
       - name: Save updated debs to repository
