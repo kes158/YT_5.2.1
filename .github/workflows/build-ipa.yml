@@ -36,7 +36,9 @@ on:
       enable_demc:        { description: "DontEatMyContent",        default: true,  type: boolean }
       enable_youloop:     { description: "YouLoop",                 default: true,  type: boolean }
       enable_youspeed:    { description: "YouSpeed",                default: true,  type: boolean }
+      enable_ytx:         { description: "YouTube X",                  default: true,  type: boolean }
       enable_opensafari:  { description: "OpenYouTubeSafariExtension", default: true,  type: boolean }
+
 
 concurrency:
   group: build-ytplus-${{ github.ref }}
@@ -221,6 +223,7 @@ jobs:
           [[ "${{ github.event.inputs.enable_youloop }}"  == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYouLoop"
           [[ "${{ github.event.inputs.enable_youspeed }}" == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYouSpeed"
           [[ "${{ github.event.inputs.enable_opensafari }}" == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nOpenYouTubeSafariExtension"
+          [[ "${{ github.event.inputs.enable_ytx }}"       == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYouTube X"
 
           {
             echo "release_notes<<EOF"
@@ -267,7 +270,7 @@ jobs:
               for k in YouGroupSettings YTVideoOverlay YouPiP YTUHD \
                         YouQuality YouChooseQuality Return-YouTube-Dislikes \
                         YTABConfigReset YTABConfig DontEatMyContent \
-                        YouLoop YouSpeed libundirect; do
+                        YouLoop YouSpeed libundirect ytx com.ps.ytx; do
                 [[ "$f" == *"$k"* ]] && { echo "$k"; return; }
               done
               echo "__other__:$f"
@@ -326,6 +329,9 @@ jobs:
                     || { echo "  skip (disabled): $fname"; continue; } ;;
                 *YouSpeed*)
                   [[ "${{ github.event.inputs.enable_youspeed }}"    == "true" ]] \
+                    || { echo "  skip (disabled): $fname"; continue; } ;;
+                *ytx*|*com.ps.ytx*)
+                  [[ "${{ github.event.inputs.enable_ytx }}"         == "true" ]] \
                     || { echo "  skip (disabled): $fname"; continue; } ;;
                 # Always include: YouGroupSettings, YTVideoOverlay, libundirect, etc.
               esac
@@ -500,9 +506,28 @@ jobs:
               echo "  skip (managed by repo): $(basename "$deb")"
               continue
             fi
+            # YouTube X (ytx) is a binary-only tweak; skip here and handle below.
+            if [[ "$(basename "$deb")" == *ytx* || "$(basename "$deb")" == *com.ps.ytx* ]]; then
+              echo "  skip (handled separately): $(basename "$deb")"
+              continue
+            fi
             cp "$deb" "$READY_DIR/"
             echo "  copied $(basename "$deb")"
           done
+
+          # ── YouTube X: binary-only tweak, pinned deb from tweaks/ ───────
+          if [[ "${{ github.event.inputs.enable_ytx }}" == "true" ]]; then
+            YTX_DEB="$(find "$CACHE_DIR" -maxdepth 1 \( -name "ytx.deb" -o -name "*com.ps.ytx*.deb" -o -name "*ytx*.deb" \) -print -quit 2>/dev/null || true)"
+            if [[ -n "$YTX_DEB" ]]; then
+              cp "$YTX_DEB" "$READY_DIR/ytx.deb"
+              echo "  copied YouTube X: $(basename "$YTX_DEB")"
+            else
+              echo "ERROR: YouTube X is enabled but no ytx.deb found in tweaks/."
+              echo "Place com.ps.ytx_1.7.22_iphoneos-arm.deb (renamed to ytx.deb) in the tweaks/ folder and commit it."
+              exit 1
+            fi
+          fi
+          # ─────────────────────────────────────────────────────────────────
 
           echo "Prepare pinned YouGroupSettings dependency"
           cache_repo_deb_version "https://repo.chariz.com" "com.ps.yougroupsettings" \
