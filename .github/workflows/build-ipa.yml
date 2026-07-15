@@ -36,9 +36,8 @@ on:
       enable_demc:        { description: "DontEatMyContent",        default: true,  type: boolean }
       enable_youloop:     { description: "YouLoop",                 default: true,  type: boolean }
       enable_youspeed:    { description: "YouSpeed",                default: true,  type: boolean }
-      enable_ytx:         { description: "YouTube X",                  default: true,  type: boolean }
       enable_opensafari:  { description: "OpenYouTubeSafariExtension", default: true,  type: boolean }
-
+      enable_ytx:         { description: "YouTube X",                  default: true,  type: boolean }
 
 concurrency:
   group: build-ytplus-${{ github.ref }}
@@ -791,8 +790,9 @@ jobs:
           find "${{ github.workspace }}/ready_packages" \( -name "*.deb" -o -name "*.appex" \) | sort > "$ALL_DEBS_FILE"
 
           # Build injection order: priority packages first, then the rest
+          # ytx is listed first so it loads before YTPlus, preventing download hook conflicts
           DEBS=("")
-          for pattern in "libundirect" "YouGroupSettings" "YTVideoOverlay" "YTABConfig" "YTABConfigReset"; do
+          for pattern in "ytx" "com.ps.ytx" "libundirect" "YouGroupSettings" "YTVideoOverlay" "YTABConfig" "YTABConfigReset"; do
             while IFS= read -r deb; do
               [[ -n "$deb" ]] || continue
               DEBS+=("$deb")
@@ -801,6 +801,7 @@ jobs:
           while IFS= read -r deb; do
             [[ -n "$deb" ]] || continue
             case "$(basename "$deb")" in
+              *ytx*.deb|*com.ps.ytx*.deb|\
               *libundirect*.deb|*YouGroupSettings*.deb|*YTVideoOverlay*.deb|\
               *YTABConfig*.deb|*YTABConfigReset*.deb) continue ;;
             esac
