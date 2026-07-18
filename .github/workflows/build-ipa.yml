@@ -207,9 +207,9 @@ jobs:
           [[ -n "$YT_VERSION" ]] || YT_VERSION="Unknown"
 
           echo "YouTube version: $YT_VERSION"
-          echo "ipa_name=YTPlus_5.2.1_${YT_VERSION}.ipa"    >> "$GITHUB_OUTPUT"
-          echo "release_name=YTPlus_5.2.1_${YT_VERSION}"    >> "$GITHUB_OUTPUT"
-          echo "tag=YTPlus_5.2.1_${YT_VERSION}"             >> "$GITHUB_OUTPUT"
+          echo "ipa_name=YTPlus_5.2.2_${YT_VERSION}.ipa"    >> "$GITHUB_OUTPUT"
+          echo "release_name=YTPlus_5.2.2_${YT_VERSION}"    >> "$GITHUB_OUTPUT"
+          echo "tag=YTPlus_5.2.2_${YT_VERSION}"             >> "$GITHUB_OUTPUT"
 
           TWEAK_LIST="YTPlus"
           [[ "${{ github.event.inputs.enable_ytabc }}"    == "true" ]] && TWEAK_LIST="$TWEAK_LIST\nYTABConfig"
